@@ -68,13 +68,14 @@ Branch: `feature-kevin-dexter`
 5. Added execution-cost realism + portfolio-level exposure guardrails.
 6. Added walk-forward split policy utilities with purged/embargo-aware fold generation + validation tests.
 7. Added persistent fill ledger + derived position state for carry-forward position context.
+8. Added mark-to-market P&L fields in daily scan output using stored ledger cost basis.
 
 ## Next Steps (Ordered)
 
-1. Add mark-to-market P&L on each daily scan using stored positions.
-2. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
-3. Add CSV export for daily signals + fallback diagnostics.
-4. Add monthly calibration memo template using weekly review output.
+1. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
+2. Add CSV export for daily signals + fallback diagnostics.
+3. Add monthly calibration memo template using weekly review output.
+4. Add a quick command to print open-position risk summary before market open.
 
 ## Work Log
 
@@ -140,3 +141,7 @@ Branch: `feature-kevin-dexter`
   - Added `bun run trade:ledger` commands (`record`, `show`, `rebuild`) for manual/paper fills.
   - Daily scanner now auto-loads stored position context and still supports CLI overrides.
   - Added deterministic tests for cost-basis and realized-P&L math in position ledger.
+- 2026-04-09:
+  - Added `positionPerformance` payload with mark-to-market unrealized/realized/total P&L.
+  - Wired scanner to load full stored position state for cost-basis-aware P&L.
+  - Added integration regression test for P&L math and updated output snapshot baseline.

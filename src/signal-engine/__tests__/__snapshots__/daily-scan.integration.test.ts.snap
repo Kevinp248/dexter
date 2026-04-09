@@ -80,6 +80,25 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
         "longShares": 0,
         "shortShares": 0,
       },
+      "positionPerformance": {
+        "hasOpenPosition": false,
+        "isCostBasisAvailable": false,
+        "longCostBasis": null,
+        "longMarketValueUsd": 0,
+        "longShares": 0,
+        "markPrice": 100,
+        "netExposureUsd": 0,
+        "notes": [
+          "No open position",
+        ],
+        "realizedPnlUsd": 0,
+        "shortCostBasis": null,
+        "shortMarketValueUsd": 0,
+        "shortShares": 0,
+        "totalPnlUsd": 0,
+        "unrealizedPnlPct": 0,
+        "unrealizedPnlUsd": 0,
+      },
       "reasoning": {
         "aggregateScore": 0.275,
         "components": [

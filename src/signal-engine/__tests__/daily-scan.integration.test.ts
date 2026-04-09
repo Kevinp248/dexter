@@ -266,4 +266,38 @@ describe('runDailyScan deterministic integration', () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-01-02T00:00:00.000Z'));
   });
+
+  test('position performance includes mark-to-market PnL when cost basis is available', async () => {
+    const scan = await runDailyScan(
+      {
+        tickers: ['AAPL'],
+        positions: {
+          AAPL: {
+            longShares: 10,
+            shortShares: 0,
+          },
+        },
+        positionStatesByTicker: {
+          AAPL: {
+            longShares: 10,
+            shortShares: 0,
+            longCostBasis: 95,
+            shortCostBasis: 0,
+            realizedPnlUsd: 12.5,
+            totalFeesUsd: 1,
+            lastTradeAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      },
+      makeProviders(0.6, 0.6, 0.6, 0.3, 0.18),
+    );
+
+    expect(scan.alerts).toHaveLength(1);
+    const perf = scan.alerts[0].positionPerformance;
+    expect(perf.hasOpenPosition).toBe(true);
+    expect(perf.isCostBasisAvailable).toBe(true);
+    expect(perf.unrealizedPnlUsd).toBe(50);
+    expect(perf.realizedPnlUsd).toBe(12.5);
+    expect(perf.totalPnlUsd).toBe(62.5);
+  });
 });

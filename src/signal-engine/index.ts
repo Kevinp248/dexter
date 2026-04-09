@@ -15,6 +15,8 @@ import { deriveConfidence, resolveAction } from './rules.js';
 import {
   ExecutionPlan,
   FallbackEvent,
+  PositionPerformance,
+  PositionStateInput,
   PreviousSignalSnapshot,
   PositionContext,
   RegionalMarketCheck,
@@ -145,6 +147,96 @@ function estimatePriceFromTechnical(
   const latest = technical.bars[technical.bars.length - 1];
   if (latest && Number.isFinite(latest.close) && latest.close > 0) return latest.close;
   return SIGNAL_CONFIG.execution.fallbackEstimatedPrice;
+}
+
+function buildPositionPerformance(
+  markPrice: number,
+  position: PositionContext,
+  positionState: PositionStateInput | undefined,
+): PositionPerformance {
+  const hasOpenPosition = position.longShares > 0 || position.shortShares > 0;
+  const isCostBasisAvailable = Boolean(positionState);
+  const longCostBasis =
+    positionState && position.longShares > 0 ? positionState.longCostBasis : null;
+  const shortCostBasis =
+    positionState && position.shortShares > 0 ? positionState.shortCostBasis : null;
+
+  const longMarketValueUsd = position.longShares * markPrice;
+  const shortMarketValueUsd = position.shortShares * markPrice;
+  const netExposureUsd = longMarketValueUsd - shortMarketValueUsd;
+
+  if (!hasOpenPosition) {
+    return {
+      hasOpenPosition,
+      isCostBasisAvailable,
+      markPrice,
+      longShares: position.longShares,
+      shortShares: position.shortShares,
+      longCostBasis,
+      shortCostBasis,
+      longMarketValueUsd,
+      shortMarketValueUsd,
+      netExposureUsd,
+      unrealizedPnlUsd: 0,
+      unrealizedPnlPct: 0,
+      realizedPnlUsd: positionState?.realizedPnlUsd ?? 0,
+      totalPnlUsd: positionState?.realizedPnlUsd ?? 0,
+      notes: ['No open position'],
+    };
+  }
+
+  if (!positionState) {
+    return {
+      hasOpenPosition,
+      isCostBasisAvailable,
+      markPrice,
+      longShares: position.longShares,
+      shortShares: position.shortShares,
+      longCostBasis,
+      shortCostBasis,
+      longMarketValueUsd,
+      shortMarketValueUsd,
+      netExposureUsd,
+      unrealizedPnlUsd: null,
+      unrealizedPnlPct: null,
+      realizedPnlUsd: null,
+      totalPnlUsd: null,
+      notes: ['Missing cost basis in stored position ledger'],
+    };
+  }
+
+  const longUnrealized =
+    position.longShares > 0 ? (markPrice - positionState.longCostBasis) * position.longShares : 0;
+  const shortUnrealized =
+    position.shortShares > 0
+      ? (positionState.shortCostBasis - markPrice) * position.shortShares
+      : 0;
+  const unrealizedPnlUsd = longUnrealized + shortUnrealized;
+  const grossCostBasis =
+    positionState.longCostBasis * position.longShares +
+    positionState.shortCostBasis * position.shortShares;
+  const unrealizedPnlPct =
+    grossCostBasis > 0 ? (unrealizedPnlUsd / grossCostBasis) * 100 : null;
+  const realizedPnlUsd = positionState.realizedPnlUsd;
+  const totalPnlUsd = realizedPnlUsd + unrealizedPnlUsd;
+
+  return {
+    hasOpenPosition,
+    isCostBasisAvailable,
+    markPrice,
+    longShares: position.longShares,
+    shortShares: position.shortShares,
+    longCostBasis,
+    shortCostBasis,
+    longMarketValueUsd,
+    shortMarketValueUsd,
+    netExposureUsd,
+    unrealizedPnlUsd,
+    unrealizedPnlPct,
+    realizedPnlUsd,
+    totalPnlUsd,
+    notes: [],
+  };
 }
 
 function buildSignalDelta(
@@ -439,6 +531,11 @@ export async function runDailyScan(
       costEstimate,
       constraints,
     };
+    const positionPerformance = buildPositionPerformance(
+      estimatedPrice,
+      positionContext,
+      options.positionStatesByTicker?.[item.ticker],
+    );
 
     const components: SignalComponent[] = [
       {
@@ -489,6 +586,7 @@ export async function runDailyScan(
       delta,
       regionalMarketCheck,
       positionContext,
+      positionPerformance,
       executionPlan,
       fallbackPolicy: {
         hadFallback: item.fallbackEvents.some((event) => event.fallbackUsed),

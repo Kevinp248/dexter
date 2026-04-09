@@ -198,6 +198,11 @@ bun run trade:ledger show
 Position ledger guide:
 `docs/position-ledger.md`
 
+Daily scan now includes position mark-to-market fields in each alert:
+- `positionPerformance.unrealizedPnlUsd`
+- `positionPerformance.realizedPnlUsd`
+- `positionPerformance.totalPnlUsd`
+
 Versioned strategy parameters:
 - `src/signal-engine/config.ts`
 - `docs/parameter-changelog.md`

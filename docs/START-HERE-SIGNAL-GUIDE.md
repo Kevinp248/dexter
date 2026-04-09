@@ -98,6 +98,7 @@ For each ticker:
 - `delta`: what changed vs previous scan (main explainability field).
 - `executionPlan.costEstimate`: whether expected edge survives costs.
 - `executionPlan.constraints`: whether portfolio caps block the trade.
+- `positionPerformance`: mark-to-market P&L for stored positions (unrealized/realized/total).
 
 Rule: use `finalAction` for manual decisions, not `action`.
 
