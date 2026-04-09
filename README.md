@@ -107,6 +107,9 @@ Or with watch mode for development:
 bun dev
 ```
 
+Main human-readable runbook (recommended first read):
+`docs/START-HERE-SIGNAL-GUIDE.md`
+
 ### 🎯 Daily Signal Scanner
 
 The deterministic signal engine runs a small US/CA watchlist, blends technical, fundamental, sentiment, and risk reviews, and emits explainable BUY/SELL/HOLD/COVER alerts. It is broker-neutral and prints structured JSON that can be audited later.

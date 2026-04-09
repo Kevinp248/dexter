@@ -16,7 +16,7 @@ Branch: `feature-kevin-dexter`
 
 ## Current Phase
 
-`Phase 3A` - Execution realism and portfolio guardrails
+`Phase 3` - Operational hardening
 
 ## Phase Plan (Ordered)
 
@@ -45,10 +45,10 @@ Branch: `feature-kevin-dexter`
 - [x] Add "why changed vs previous day" output.
 
 ### Phase 3 - Operational hardening (Planned)
-- [ ] Add daily scheduler instructions/playbook.
+- [x] Add daily scheduler instructions/playbook.
 - [ ] Add retry/fallback policy for unavailable data sources.
 - [ ] Add Canadian ticker/data nuance checks.
-- [ ] Add runbook for manual-trade workflow and review checklist.
+- [x] Add runbook for manual-trade workflow and review checklist.
 
 ### Phase 3A - Execution realism (In Progress)
 - [x] Add transaction cost model (spread + slippage + fees + borrow proxy).
@@ -67,10 +67,10 @@ Branch: `feature-kevin-dexter`
 
 ## Next Steps (Ordered)
 
-1. Add daily scheduler playbook and runbook for manual trade review.
-2. Add Canadian ticker nuance checks (liquidity + exchange metadata validation).
-3. Add retry/fallback policy for unavailable data sources.
-4. Start walk-forward validation design (purged/embargo style split policy).
+1. Add Canadian ticker nuance checks (liquidity + exchange metadata validation).
+2. Add retry/fallback policy for unavailable data sources.
+3. Start walk-forward validation design (purged/embargo style split policy).
+4. Add weekly performance review script/checklist tied to paper-trade log.
 
 ## Work Log
 
@@ -105,3 +105,9 @@ Branch: `feature-kevin-dexter`
   - Added scan history persistence at `.dexter/signal-engine/last-scan.json`.
   - Added regression test for delta behavior and updated snapshot baseline.
   - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 14 tests, 1 snapshot).
+- 2026-04-09:
+  - Added main operator guide in plain English (`docs/START-HERE-SIGNAL-GUIDE.md`).
+  - Included backtest-first workflow, scheduler examples, and manual trade checklist.
+  - Linked README to this guide and marked it as the primary human runbook.
+- 2026-04-09:
+  - Added paper-trade log template (`docs/paper-trade-log-template.md`) and linked it in the operator guide.
