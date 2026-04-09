@@ -3,6 +3,7 @@ import { config } from 'dotenv';
 import { logger } from '../utils/logger.js';
 import { loadPreviousSignalsByTicker, saveLatestScan } from './history.js';
 import { runDailyScan } from './index.js';
+import { appendScanAlertsToPaperTradeLog } from './paper-trade-log.js';
 import {
   loadPositionContexts,
   loadPositionState,
@@ -11,8 +12,14 @@ import { ScanOptions } from './models.js';
 
 config({ quiet: true });
 
-function parseArgs(argv: string[]): ScanOptions {
+type ParsedCliArgs = {
+  scanOptions: ScanOptions;
+  appendCsvPath?: string;
+};
+
+function parseArgs(argv: string[]): ParsedCliArgs {
   const options: ScanOptions = { positions: {} };
+  let appendCsvPath: string | undefined;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -115,17 +122,28 @@ function parseArgs(argv: string[]): ScanOptions {
       i += 1;
       continue;
     }
+
+    if (arg === '--append-csv') {
+      if (argv[i + 1] && !argv[i + 1].startsWith('--')) {
+        appendCsvPath = argv[i + 1];
+        i += 1;
+      } else {
+        appendCsvPath = '';
+      }
+      continue;
+    }
   }
 
   if (options.positions && Object.keys(options.positions).length === 0) {
     delete options.positions;
   }
 
-  return options;
+  return { scanOptions: options, appendCsvPath };
 }
 
 async function main() {
-  const cliOptions = parseArgs(process.argv.slice(2));
+  const parsed = parseArgs(process.argv.slice(2));
+  const cliOptions = parsed.scanOptions;
   const positionStateSnapshot = await loadPositionState();
   const storedPositions = await loadPositionContexts();
   const mergedPositions = {
@@ -140,6 +158,15 @@ async function main() {
   options.previousSignalsByTicker = await loadPreviousSignalsByTicker();
   const scan = await runDailyScan(options);
   await saveLatestScan(scan);
+  if (parsed.appendCsvPath !== undefined) {
+    const appendResult = await appendScanAlertsToPaperTradeLog(
+      scan,
+      parsed.appendCsvPath || undefined,
+    );
+    logger.info(
+      `Appended ${appendResult.rowsAppended} row(s) to paper trade CSV at ${appendResult.path}`,
+    );
+  }
   console.log(JSON.stringify(scan, null, 2));
 }
 

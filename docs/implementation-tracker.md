@@ -70,13 +70,14 @@ Branch: `feature-kevin-dexter`
 7. Added persistent fill ledger + derived position state for carry-forward position context.
 8. Added mark-to-market P&L fields in daily scan output using stored ledger cost basis.
 9. Added signal-quality dashboard metrics (hit rate by action/confidence bucket).
+10. Added automatic CSV export of daily alerts with fallback diagnostics.
 
 ## Next Steps (Ordered)
 
-1. Add CSV export for daily signals + fallback diagnostics.
-2. Add monthly calibration memo template using weekly review output.
-3. Add a quick command to print open-position risk summary before market open.
-4. Add confidence-calibration guardrails when high-confidence bucket underperforms.
+1. Add monthly calibration memo template using weekly review output.
+2. Add a quick command to print open-position risk summary before market open.
+3. Add confidence-calibration guardrails when high-confidence bucket underperforms.
+4. Add a de-duplication guard for same-day repeated auto-log rows.
 
 ## Work Log
 
@@ -151,3 +152,7 @@ Branch: `feature-kevin-dexter`
   - Added hit-rate/avg-result metrics by action and confidence buckets.
   - Added docs and log-template update to include `Confidence` in paper-trade CSV.
   - Added regression test coverage for dashboard aggregation logic.
+- 2026-04-09:
+  - Added automatic scan-to-CSV logging (`--append-csv`, `bun run scan:daily:log`).
+  - Added CSV exporter with fallback reason/retry columns and confidence capture.
+  - Added regression test to ensure header creation + append behavior is stable.

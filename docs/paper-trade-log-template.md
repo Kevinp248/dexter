@@ -3,6 +3,8 @@
 Use this after each scan and manual decision.
 For fill-level position tracking, also log each fill through:
 - `bun run trade:ledger record ...`
+For automatic scan-row logging:
+- `bun run scan:daily:log --tickers ...`
 
 Recommended file path for weekly review script:
 - `.dexter/signal-engine/paper-trade-log.csv`

@@ -63,6 +63,11 @@ Default watchlist:
 bun run scan:daily
 ```
 
+Auto-log each alert row into paper-trade CSV during scan:
+```bash
+bun run scan:daily:log --tickers AAPL
+```
+
 Specific tickers:
 ```bash
 bun run scan:daily --tickers AAPL,SHOP,TD
