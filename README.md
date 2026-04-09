@@ -148,6 +148,10 @@ Delta explainability:
 - Each alert now includes `delta` fields showing what changed vs previous scan.
 - Scanner stores the latest run at `.dexter/signal-engine/last-scan.json` and compares next run against it.
 
+Canadian market nuance checks:
+- CA tickers now run exchange + liquidity checks.
+- If checks fail, `finalAction` is downgraded to `HOLD` and details appear in `regionalMarketCheck`.
+
 Add this command to a scheduler (cron, `croner`, etc.) for once-a-day execution during market hours.
 
 Core logic mapping (ai-hedge-fund + Dexter):

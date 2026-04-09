@@ -47,7 +47,7 @@ Branch: `feature-kevin-dexter`
 ### Phase 3 - Operational hardening (Planned)
 - [x] Add daily scheduler instructions/playbook.
 - [ ] Add retry/fallback policy for unavailable data sources.
-- [ ] Add Canadian ticker/data nuance checks.
+- [x] Add Canadian ticker/data nuance checks.
 - [x] Add runbook for manual-trade workflow and review checklist.
 
 ### Phase 3A - Execution realism (In Progress)
@@ -67,10 +67,10 @@ Branch: `feature-kevin-dexter`
 
 ## Next Steps (Ordered)
 
-1. Add Canadian ticker nuance checks (liquidity + exchange metadata validation).
-2. Add retry/fallback policy for unavailable data sources.
-3. Start walk-forward validation design (purged/embargo style split policy).
-4. Add weekly performance review script/checklist tied to paper-trade log.
+1. Add retry/fallback policy for unavailable data sources.
+2. Start walk-forward validation design (purged/embargo style split policy).
+3. Add weekly performance review script/checklist tied to paper-trade log.
+4. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
 
 ## Work Log
 
@@ -111,3 +111,8 @@ Branch: `feature-kevin-dexter`
   - Linked README to this guide and marked it as the primary human runbook.
 - 2026-04-09:
   - Added paper-trade log template (`docs/paper-trade-log-template.md`) and linked it in the operator guide.
+- 2026-04-09:
+  - Added Canadian market nuance checks (exchange + liquidity gate) with downgrade-to-`HOLD` behavior.
+  - Added `regionalMarketCheck` to payload and regression coverage for CA low-liquidity case.
+  - Updated snapshot baseline and operator docs with CA-specific review guidance.
+  - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 15 tests, 1 snapshot).

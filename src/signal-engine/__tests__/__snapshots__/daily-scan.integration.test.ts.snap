@@ -183,6 +183,13 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
           "valuation": 0.09,
         },
       },
+      "regionalMarketCheck": {
+        "averageDollarVolume20d": 2000000,
+        "checks": [
+          "Canadian market checks passed",
+        ],
+        "isTradeableInRegion": true,
+      },
       "ticker": "SHOP",
       "watchlist": {
         "currency": "CAD",

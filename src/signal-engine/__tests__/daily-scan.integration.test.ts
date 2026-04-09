@@ -6,7 +6,16 @@ function makeProviders(
   valuationScore: number,
   sentimentScore: number,
   technicalVolatility = 0.18,
+  averageDailyDollarVolume = 2_000_000,
 ): ScanProviders {
+  const close = 100;
+  const volume = Math.floor(averageDailyDollarVolume / close);
+  const bars = Array.from({ length: 30 }, (_, i) => ({
+    date: `2025-12-${String(i + 1).padStart(2, '0')}`,
+    close,
+    volume,
+  }));
+
   return {
     async runTechnicalAnalysis(ticker: string) {
       return {
@@ -15,7 +24,7 @@ function makeProviders(
         confidence: Math.abs(technicalScore),
         signal: technicalScore > 0.1 ? 'bullish' as const : technicalScore < -0.1 ? 'bearish' as const : 'neutral' as const,
         volatility: technicalVolatility,
-        bars: [],
+        bars,
         returns: Array.from({ length: 30 }, (_, i) => (i % 2 === 0 ? 0.01 : -0.005)),
         summary: 'Mock technical',
         subSignals: {
@@ -173,6 +182,17 @@ describe('runDailyScan deterministic integration', () => {
       expect(alert.reasoning.risk.averageCorrelation).not.toBeNull();
       expect(alert.reasoning.risk.correlationMultiplier).toBe(0.7);
     }
+  });
+
+  test('canadian low-liquidity check downgrades BUY to HOLD', async () => {
+    const scan = await runDailyScan(
+      { tickers: ['SHOP'] },
+      makeProviders(0.95, 0.8, 0.75, 0.4, 0.2, 100_000),
+    );
+    expect(scan.alerts).toHaveLength(1);
+    expect(scan.alerts[0].action).toBe('BUY');
+    expect(scan.alerts[0].regionalMarketCheck.isTradeableInRegion).toBe(false);
+    expect(scan.alerts[0].finalAction).toBe('HOLD');
   });
 
   test('snapshot: full output shape remains stable', async () => {

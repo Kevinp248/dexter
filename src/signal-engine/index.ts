@@ -16,11 +16,13 @@ import {
   ExecutionPlan,
   PreviousSignalSnapshot,
   PositionContext,
+  RegionalMarketCheck,
   ScanOptions,
   SignalComponent,
   SignalDelta,
   SignalPayload,
 } from './models.js';
+import { evaluateRegionalMarketCheck } from './regional-checks.js';
 
 export interface ScanProviders {
   runTechnicalAnalysis: typeof runTechnicalAnalysis;
@@ -170,7 +172,7 @@ export async function runDailyScan(
           ticker: entry.ticker,
           score: 0,
           confidence: 0,
-          signal: 'neutral' as const,
+            signal: 'neutral' as const,
           volatility: 0.3,
           bars: [],
           returns: [],
@@ -298,7 +300,14 @@ export async function runDailyScan(
       action !== 'HOLD' &&
       estimatedShares > 0 &&
       (!costEstimate.isTradeableAfterCosts || !constraints.isAllowed);
-    const finalAction = shouldDowngradeToHold ? 'HOLD' : action;
+    const regionalMarketCheck: RegionalMarketCheck = evaluateRegionalMarketCheck(
+      entry,
+      item.technical,
+    );
+    const shouldDowngradeForRegionalChecks =
+      action !== 'HOLD' && estimatedShares > 0 && !regionalMarketCheck.isTradeableInRegion;
+    const finalAction =
+      shouldDowngradeToHold || shouldDowngradeForRegionalChecks ? 'HOLD' : action;
     const delta = buildSignalDelta(
       options.previousSignalsByTicker?.[item.ticker],
       action,
@@ -362,6 +371,7 @@ export async function runDailyScan(
       confidence,
       finalAction,
       delta,
+      regionalMarketCheck,
       positionContext,
       executionPlan,
       reasoning: {

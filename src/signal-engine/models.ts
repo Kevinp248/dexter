@@ -55,6 +55,12 @@ export interface ExecutionPlan {
   constraints: PortfolioConstraintEvaluation;
 }
 
+export interface RegionalMarketCheck {
+  isTradeableInRegion: boolean;
+  checks: string[];
+  averageDollarVolume20d: number | null;
+}
+
 export interface PreviousSignalSnapshot {
   generatedAt: string;
   action: SignalAction;
@@ -81,6 +87,7 @@ export interface SignalPayload {
   confidence: number;
   finalAction: SignalAction;
   delta: SignalDelta;
+  regionalMarketCheck: RegionalMarketCheck;
   positionContext: PositionContext;
   executionPlan: ExecutionPlan;
   reasoning: {

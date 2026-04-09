@@ -132,6 +132,13 @@ export interface SignalEngineConfig {
     defaultMaxGrossExposurePct: number;
     defaultMaxSectorExposurePct: number;
   };
+  regional: {
+    canada: {
+      allowedExchanges: string[];
+      minAverageDollarVolume20d: number;
+      minHistoryBars: number;
+    };
+  };
 }
 
 export const SIGNAL_CONFIG: SignalEngineConfig = {
@@ -267,5 +274,12 @@ export const SIGNAL_CONFIG: SignalEngineConfig = {
   portfolio: {
     defaultMaxGrossExposurePct: 1.0,
     defaultMaxSectorExposurePct: 0.35,
+  },
+  regional: {
+    canada: {
+      allowedExchanges: ['TSX', 'TSXV', 'CSE'],
+      minAverageDollarVolume20d: 500_000,
+      minHistoryBars: 20,
+    },
   },
 };

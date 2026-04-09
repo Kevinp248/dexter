@@ -76,6 +76,7 @@ bun run scan:daily \
 For each ticker:
 - `action`: raw model action before execution filters.
 - `finalAction`: final executable suggestion after cost + guardrails.
+- `regionalMarketCheck`: region-specific safety checks (especially for CA names).
 - `delta`: what changed vs previous scan (main explainability field).
 - `executionPlan.costEstimate`: whether expected edge survives costs.
 - `executionPlan.constraints`: whether portfolio caps block the trade.
@@ -109,7 +110,8 @@ Before placing a trade:
 2. Confirm `executionPlan.costEstimate.isTradeableAfterCosts` is `true`.
 3. Confirm `executionPlan.constraints.isAllowed` is `true`.
 4. Confirm no concentration warning in `reasoning.risk.checks`.
-5. Confirm you understand `delta.topDrivers`.
+5. Confirm `regionalMarketCheck.isTradeableInRegion` is `true` (for CA tickers).
+6. Confirm you understand `delta.topDrivers`.
 
 After decision, log it in:
 - `docs/paper-trade-log-template.md`

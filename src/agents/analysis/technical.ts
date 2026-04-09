@@ -14,7 +14,7 @@ export interface TechnicalSignal {
   confidence: number;
   signal: 'bullish' | 'bearish' | 'neutral';
   volatility: number;
-  bars: { date: string; close: number }[];
+  bars: { date: string; close: number; volume: number }[];
   returns: number[];
   summary: string;
   subSignals: {
@@ -279,7 +279,11 @@ export async function runTechnicalAnalysis(ticker: string): Promise<TechnicalSig
     confidence,
     signal,
     volatility: annualizedVolatility,
-    bars: history.map((bar) => ({ date: bar.date, close: bar.close })),
+    bars: history.map((bar) => ({
+      date: bar.date,
+      close: bar.close,
+      volume: bar.volume,
+    })),
     returns,
     summary: `Trend ${trend.signal}, Momentum ${momentum.signal}, score ${score.toFixed(2)}`,
     subSignals: {

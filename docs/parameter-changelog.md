@@ -29,3 +29,17 @@ This file tracks every change to strategy parameters in:
 - Validation:
   - `npm run typecheck`
   - `npm run test:signals`
+
+### 2026-04-09 - Config v1.0.1
+- Added `regional.canada` settings:
+  - `allowedExchanges`
+  - `minAverageDollarVolume20d`
+  - `minHistoryBars`
+- Added Canadian market nuance gating in signal engine:
+  - Exchange + liquidity checks feed `regionalMarketCheck`.
+  - Trade actions can be downgraded to `HOLD` if CA checks fail.
+- Reason:
+  - Avoid low-liquidity or unsupported-market executions for Canadian names.
+- Validation:
+  - `npm run typecheck`
+  - `npm run test:signals`
