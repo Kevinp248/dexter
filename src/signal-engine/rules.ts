@@ -1,4 +1,5 @@
 import { RiskAssessment } from '../risk/risk.js';
+import { SIGNAL_CONFIG } from './config.js';
 import { PositionContext, SignalAction } from './models.js';
 
 function clamp(value: number, min: number, max: number): number {
@@ -10,23 +11,30 @@ export function resolveAction(
   risk: RiskAssessment,
   position: PositionContext,
 ): SignalAction {
-  if (position.shortShares > 0 && (score > 0.15 || risk.riskScore < 0.25)) {
+  if (
+    position.shortShares > 0 &&
+    (score > SIGNAL_CONFIG.actions.coverScoreThreshold ||
+      risk.riskScore < SIGNAL_CONFIG.actions.coverRiskThreshold)
+  ) {
     return 'COVER';
   }
-  if (score >= 0.5 && risk.riskScore > 0.35) {
+  if (
+    score >= SIGNAL_CONFIG.actions.buyScoreThreshold &&
+    risk.riskScore > SIGNAL_CONFIG.actions.buyRiskThreshold
+  ) {
     return 'BUY';
   }
-  if (score <= -0.45) {
+  if (score <= SIGNAL_CONFIG.actions.sellScoreThreshold) {
     return 'SELL';
   }
-  if (position.longShares > 0 && score < -0.25) {
+  if (position.longShares > 0 && score < SIGNAL_CONFIG.actions.longExitScoreThreshold) {
     return 'SELL';
   }
   return 'HOLD';
 }
 
 export function deriveConfidence(score: number, risk: RiskAssessment): number {
-  const base = Math.abs(score) * 70;
-  const riskBonus = risk.riskScore * 30;
+  const base = Math.abs(score) * SIGNAL_CONFIG.confidence.scoreWeight;
+  const riskBonus = risk.riskScore * SIGNAL_CONFIG.confidence.riskWeight;
   return clamp(base + riskBonus, 0, 100);
 }

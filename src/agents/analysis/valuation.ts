@@ -3,6 +3,7 @@ import {
   fetchIncomeStatements,
   fetchKeyRatios,
 } from '../../data/market.js';
+import { SIGNAL_CONFIG } from '../../signal-engine/config.js';
 
 type MethodResult = {
   value: number;
@@ -41,10 +42,18 @@ function growthFromSeries(values: number[]): number {
   const oldest = values[values.length - 1];
   if (oldest <= 0 || newest <= 0) return 0.03;
   const years = values.length - 1;
-  return clamp((newest / oldest) ** (1 / years) - 1, -0.15, 0.2);
+  return clamp(
+    (newest / oldest) ** (1 / years) - 1,
+    SIGNAL_CONFIG.valuation.growthClampMin,
+    SIGNAL_CONFIG.valuation.growthClampMax,
+  );
 }
 
-function dcfValue(lastFcf: number, growthRate: number, discountRate = 0.1): number {
+function dcfValue(
+  lastFcf: number,
+  growthRate: number,
+  discountRate = SIGNAL_CONFIG.valuation.dcfDiscountRate,
+): number {
   if (!Number.isFinite(lastFcf) || lastFcf <= 0) return 0;
   let pv = 0;
   for (let year = 1; year <= 5; year += 1) {
@@ -59,12 +68,20 @@ function dcfValue(lastFcf: number, growthRate: number, discountRate = 0.1): numb
 function ownerEarningsValue(netIncome: number, depreciation: number, capex: number, growthRate: number): number {
   const owner = netIncome + depreciation - capex;
   if (!Number.isFinite(owner) || owner <= 0) return 0;
-  return dcfValue(owner, growthRate, 0.15) * 0.75;
+  return (
+    dcfValue(owner, growthRate, SIGNAL_CONFIG.valuation.ownerEarningsDiscountRate) *
+    SIGNAL_CONFIG.valuation.ownerEarningsMarginOfSafety
+  );
 }
 
 function asMethod(value: number, marketCap: number, label: string): MethodResult {
   const gap = marketCap > 0 ? (value - marketCap) / marketCap : 0;
-  const signal = gap > 0.15 ? 'bullish' : gap < -0.15 ? 'bearish' : 'neutral';
+  const signal =
+    gap > SIGNAL_CONFIG.valuation.gapSignalThreshold
+      ? 'bullish'
+      : gap < -SIGNAL_CONFIG.valuation.gapSignalThreshold
+        ? 'bearish'
+        : 'neutral';
   return {
     value,
     gap,
@@ -89,7 +106,14 @@ export async function runValuationAnalysis(ticker: string): Promise<ValuationSig
   const fcfHistory = cashFlows
     .map((row) => asNumber(row.free_cash_flow))
     .filter((value): value is number => value !== undefined && value > 0);
-  const growthRate = fcfHistory.length >= 2 ? growthFromSeries(fcfHistory) : clamp(earningsGrowth, -0.1, 0.15);
+  const growthRate =
+    fcfHistory.length >= 2
+      ? growthFromSeries(fcfHistory)
+      : clamp(
+          earningsGrowth,
+          SIGNAL_CONFIG.valuation.growthClampMin,
+          SIGNAL_CONFIG.valuation.growthClampMax,
+        );
   const lastFcf = fcfHistory[0] ?? 0;
 
   const latestIncome = incomeStatements[0] ?? {};
@@ -99,28 +123,46 @@ export async function runValuationAnalysis(ticker: string): Promise<ValuationSig
 
   const dcf = asMethod(dcfValue(lastFcf, growthRate), marketCap, 'DCF');
   const ownerEarnings = asMethod(
-    ownerEarningsValue(netIncome, depreciation, capex, clamp(earningsGrowth, -0.05, 0.12)),
+    ownerEarningsValue(
+      netIncome,
+      depreciation,
+      capex,
+      clamp(
+        earningsGrowth,
+        SIGNAL_CONFIG.valuation.ownerGrowthClampMin,
+        SIGNAL_CONFIG.valuation.ownerGrowthClampMax,
+      ),
+    ),
     marketCap,
     'Owner earnings',
   );
 
-  const fairPe = 20;
+  const fairPe = SIGNAL_CONFIG.valuation.fairPe;
   const multiplesValue = marketCap > 0 && peRatio > 0 ? marketCap * (fairPe / peRatio) : 0;
   const multiples = asMethod(multiplesValue, marketCap, 'Relative multiple');
 
   const bookValue = marketCap > 0 && pbRatio > 0 ? marketCap / pbRatio : 0;
-  const residualIncomeValue = bookValue * (1 + roe) * 1.05;
+  const residualIncomeValue =
+    bookValue * (1 + roe) * SIGNAL_CONFIG.valuation.residualIncomeGrowthMultiplier;
   const residualIncome = asMethod(residualIncomeValue, marketCap, 'Residual income');
 
   const weightedGap =
-    dcf.gap * 0.35 +
-    ownerEarnings.gap * 0.35 +
-    multiples.gap * 0.2 +
-    residualIncome.gap * 0.1;
-  const score = clamp(weightedGap / 0.3, -1, 1);
-  const confidence = clamp(Math.abs(weightedGap) / 0.3, 0, 1);
+    dcf.gap * SIGNAL_CONFIG.valuation.weights.dcf +
+    ownerEarnings.gap * SIGNAL_CONFIG.valuation.weights.ownerEarnings +
+    multiples.gap * SIGNAL_CONFIG.valuation.weights.multiples +
+    residualIncome.gap * SIGNAL_CONFIG.valuation.weights.residualIncome;
+  const score = clamp(weightedGap / SIGNAL_CONFIG.valuation.scoreScale, -1, 1);
+  const confidence = clamp(
+    Math.abs(weightedGap) / SIGNAL_CONFIG.valuation.scoreScale,
+    0,
+    1,
+  );
   const signal: ValuationSignal['signal'] =
-    weightedGap > 0.15 ? 'bullish' : weightedGap < -0.15 ? 'bearish' : 'neutral';
+    weightedGap > SIGNAL_CONFIG.valuation.gapSignalThreshold
+      ? 'bullish'
+      : weightedGap < -SIGNAL_CONFIG.valuation.gapSignalThreshold
+        ? 'bearish'
+        : 'neutral';
 
   return {
     ticker,

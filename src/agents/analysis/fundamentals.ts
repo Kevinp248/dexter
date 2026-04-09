@@ -1,4 +1,5 @@
 import { fetchKeyRatios } from '../../data/market.js';
+import { SIGNAL_CONFIG } from '../../signal-engine/config.js';
 
 type PillarSignal = {
   signal: 'bullish' | 'bearish' | 'neutral';
@@ -74,62 +75,91 @@ export async function runFundamentalAnalysis(ticker: string): Promise<Fundamenta
   };
 
   const profitabilityPositive = [
-    (metrics.roe ?? -1) > 0.15,
-    (metrics.netMargin ?? -1) > 0.2,
-    (metrics.operatingMargin ?? -1) > 0.15,
+    (metrics.roe ?? -1) > SIGNAL_CONFIG.fundamentals.profitability.roeStrong,
+    (metrics.netMargin ?? -1) >
+      SIGNAL_CONFIG.fundamentals.profitability.netMarginStrong,
+    (metrics.operatingMargin ?? -1) >
+      SIGNAL_CONFIG.fundamentals.profitability.operatingMarginStrong,
   ].filter(Boolean).length;
   const profitabilityNegative = [
-    metrics.roe !== undefined && metrics.roe <= 0.05,
-    metrics.netMargin !== undefined && metrics.netMargin <= 0.08,
-    metrics.operatingMargin !== undefined && metrics.operatingMargin <= 0.08,
+    metrics.roe !== undefined &&
+      metrics.roe <= SIGNAL_CONFIG.fundamentals.profitability.roeWeak,
+    metrics.netMargin !== undefined &&
+      metrics.netMargin <= SIGNAL_CONFIG.fundamentals.profitability.netMarginWeak,
+    metrics.operatingMargin !== undefined &&
+      metrics.operatingMargin <=
+        SIGNAL_CONFIG.fundamentals.profitability.operatingMarginWeak,
   ].filter(Boolean).length;
   const profitabilityScore = scoreFromCounts(profitabilityPositive, profitabilityNegative);
 
   const growthPositive = [
-    (metrics.revenueGrowth ?? -1) > 0.1,
-    (metrics.earningsGrowth ?? -1) > 0.1,
-    (metrics.bookValueGrowth ?? -1) > 0.1,
+    (metrics.revenueGrowth ?? -1) > SIGNAL_CONFIG.fundamentals.growth.revenueStrong,
+    (metrics.earningsGrowth ?? -1) >
+      SIGNAL_CONFIG.fundamentals.growth.earningsStrong,
+    (metrics.bookValueGrowth ?? -1) >
+      SIGNAL_CONFIG.fundamentals.growth.bookValueStrong,
   ].filter(Boolean).length;
   const growthNegative = [
-    metrics.revenueGrowth !== undefined && metrics.revenueGrowth < 0,
-    metrics.earningsGrowth !== undefined && metrics.earningsGrowth < 0,
-    metrics.bookValueGrowth !== undefined && metrics.bookValueGrowth < 0,
+    metrics.revenueGrowth !== undefined &&
+      metrics.revenueGrowth < SIGNAL_CONFIG.fundamentals.growth.negativeCutoff,
+    metrics.earningsGrowth !== undefined &&
+      metrics.earningsGrowth < SIGNAL_CONFIG.fundamentals.growth.negativeCutoff,
+    metrics.bookValueGrowth !== undefined &&
+      metrics.bookValueGrowth < SIGNAL_CONFIG.fundamentals.growth.negativeCutoff,
   ].filter(Boolean).length;
   const growthScore = scoreFromCounts(growthPositive, growthNegative);
 
   let healthPositive = 0;
   let healthNegative = 0;
   if (metrics.currentRatio !== undefined) {
-    if (metrics.currentRatio > 1.5) healthPositive += 1;
-    if (metrics.currentRatio < 1) healthNegative += 1;
+    if (metrics.currentRatio > SIGNAL_CONFIG.fundamentals.health.currentRatioStrong)
+      healthPositive += 1;
+    if (metrics.currentRatio < SIGNAL_CONFIG.fundamentals.health.currentRatioWeak)
+      healthNegative += 1;
   }
   if (metrics.debtToEquity !== undefined) {
-    if (metrics.debtToEquity < 0.5) healthPositive += 1;
-    if (metrics.debtToEquity > 2) healthNegative += 1;
+    if (metrics.debtToEquity < SIGNAL_CONFIG.fundamentals.health.debtToEquityStrong)
+      healthPositive += 1;
+    if (metrics.debtToEquity > SIGNAL_CONFIG.fundamentals.health.debtToEquityWeak)
+      healthNegative += 1;
   }
   if (
     metrics.freeCashFlowPerShare !== undefined &&
     metrics.earningsPerShare !== undefined &&
     metrics.earningsPerShare > 0
   ) {
-    if (metrics.freeCashFlowPerShare > metrics.earningsPerShare * 0.8) healthPositive += 1;
-    if (metrics.freeCashFlowPerShare < metrics.earningsPerShare * 0.5) healthNegative += 1;
+    if (
+      metrics.freeCashFlowPerShare >
+      metrics.earningsPerShare * SIGNAL_CONFIG.fundamentals.health.fcfConversionStrong
+    )
+      healthPositive += 1;
+    if (
+      metrics.freeCashFlowPerShare <
+      metrics.earningsPerShare * SIGNAL_CONFIG.fundamentals.health.fcfConversionWeak
+    )
+      healthNegative += 1;
   }
   const healthScore = scoreFromCounts(healthPositive, healthNegative);
 
   let valuationPositive = 0;
   let valuationNegative = 0;
   if (metrics.peRatio !== undefined) {
-    if (metrics.peRatio <= 25) valuationPositive += 1;
-    if (metrics.peRatio > 35) valuationNegative += 1;
+    if (metrics.peRatio <= SIGNAL_CONFIG.fundamentals.valuationRatios.peStrong)
+      valuationPositive += 1;
+    if (metrics.peRatio > SIGNAL_CONFIG.fundamentals.valuationRatios.peWeak)
+      valuationNegative += 1;
   }
   if (metrics.pbRatio !== undefined) {
-    if (metrics.pbRatio <= 3) valuationPositive += 1;
-    if (metrics.pbRatio > 5) valuationNegative += 1;
+    if (metrics.pbRatio <= SIGNAL_CONFIG.fundamentals.valuationRatios.pbStrong)
+      valuationPositive += 1;
+    if (metrics.pbRatio > SIGNAL_CONFIG.fundamentals.valuationRatios.pbWeak)
+      valuationNegative += 1;
   }
   if (metrics.psRatio !== undefined) {
-    if (metrics.psRatio <= 5) valuationPositive += 1;
-    if (metrics.psRatio > 8) valuationNegative += 1;
+    if (metrics.psRatio <= SIGNAL_CONFIG.fundamentals.valuationRatios.psStrong)
+      valuationPositive += 1;
+    if (metrics.psRatio > SIGNAL_CONFIG.fundamentals.valuationRatios.psWeak)
+      valuationNegative += 1;
   }
   const valuationScore = scoreFromCounts(valuationPositive, valuationNegative);
 
@@ -169,7 +199,12 @@ export async function runFundamentalAnalysis(ticker: string): Promise<Fundamenta
 
   const score = (pillars.profitability.score + pillars.growth.score + pillars.health.score + pillars.valuationRatios.score) / 4;
   const confidence = Math.abs(score);
-  const signal: FundamentalSignal['signal'] = score > 0.15 ? 'bullish' : score < -0.15 ? 'bearish' : 'neutral';
+  const signal: FundamentalSignal['signal'] =
+    score > SIGNAL_CONFIG.fundamentals.aggregateSignalThreshold
+      ? 'bullish'
+      : score < -SIGNAL_CONFIG.fundamentals.aggregateSignalThreshold
+        ? 'bearish'
+        : 'neutral';
 
   return {
     ticker,

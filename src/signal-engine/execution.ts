@@ -1,5 +1,6 @@
 import { RiskAssessment } from '../risk/risk.js';
 import { WatchlistEntry } from '../watchlists/watchlists.js';
+import { SIGNAL_CONFIG } from './config.js';
 import { PositionContext, SignalAction, type ExecutionCostEstimate } from './models.js';
 
 type CostInputs = {
@@ -26,9 +27,21 @@ function getRegionCostBps(region: WatchlistEntry['region']): {
   borrowDailyBps: number;
 } {
   if (region === 'CA') {
-    return { spreadBps: 7, slippageBps: 10, feeBps: 1.5, borrowDailyBps: 2.5 };
+    const ca = SIGNAL_CONFIG.execution.regionCostBps.CA;
+    return {
+      spreadBps: ca.spread,
+      slippageBps: ca.slippage,
+      feeBps: ca.fee,
+      borrowDailyBps: ca.borrowDaily,
+    };
   }
-  return { spreadBps: 5, slippageBps: 7, feeBps: 1, borrowDailyBps: 2 };
+  const us = SIGNAL_CONFIG.execution.regionCostBps.US;
+  return {
+    spreadBps: us.spread,
+    slippageBps: us.slippage,
+    feeBps: us.fee,
+    borrowDailyBps: us.borrowDaily,
+  };
 }
 
 function isTradeAction(action: SignalAction): boolean {
@@ -46,16 +59,20 @@ export function estimateTargetNotionalUsd(
   if (action === 'COVER' && position.shortShares <= 0) return 0;
   if (!isTradeAction(action)) return 0;
 
-  const confidenceScale = clamp(confidence / 100, 0.1, 1);
+  const confidenceScale = clamp(confidence / 100, SIGNAL_CONFIG.execution.confidenceScaleMin, 1);
   const riskBudget = portfolioValue * risk.maxAllocation;
   return riskBudget * confidenceScale;
 }
 
 export function estimateExecutionCosts(inputs: CostInputs): ExecutionCostEstimate {
   const { spreadBps, slippageBps, feeBps, borrowDailyBps } = getRegionCostBps(inputs.watchlist.region);
-  const costMultiplier = clamp(inputs.config?.costMultiplier ?? 1, 0.25, 20);
+  const costMultiplier = clamp(
+    inputs.config?.costMultiplier ?? SIGNAL_CONFIG.execution.defaultCostMultiplier,
+    SIGNAL_CONFIG.execution.costMultiplierMin,
+    SIGNAL_CONFIG.execution.costMultiplierMax,
+  );
   const oneWayCostBps = (spreadBps + slippageBps + feeBps) * costMultiplier;
-  const holdingDays = 5; // default weekly hold assumption for daily scanner signals
+  const holdingDays = SIGNAL_CONFIG.execution.holdingDays;
   const borrowBps = inputs.action === 'COVER' || inputs.position.shortShares > 0
     ? borrowDailyBps * holdingDays * costMultiplier
     : 0;
@@ -64,7 +81,9 @@ export function estimateExecutionCosts(inputs: CostInputs): ExecutionCostEstimat
   const expectedEdgeBps = Math.abs(inputs.aggregateScore) * 250 + inputs.confidence * 0.6;
   const expectedEdgeAfterCostsBps = expectedEdgeBps - roundTripCostBps;
   const estimatedRoundTripCostUsd = (inputs.notionalUsd * roundTripCostBps) / 10000;
-  const minEdge = inputs.config?.minimumEdgeAfterCostsBps ?? 0;
+  const minEdge =
+    inputs.config?.minimumEdgeAfterCostsBps ??
+    SIGNAL_CONFIG.execution.defaultMinimumEdgeAfterCostsBps;
 
   return {
     oneWayCostBps,

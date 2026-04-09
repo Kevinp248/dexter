@@ -151,6 +151,10 @@ Deterministic signal validation (works even if Bun is unavailable in your shell)
 npm run test:signals
 ```
 
+Versioned strategy parameters:
+- `src/signal-engine/config.ts`
+- `docs/parameter-changelog.md`
+
 ## 📊 How to Evaluate
 
 Dexter includes an evaluation suite that tests the agent against a dataset of financial questions. Evals use LangSmith for tracking and an LLM-as-judge approach for scoring correctness.

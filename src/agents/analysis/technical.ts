@@ -1,4 +1,5 @@
 import { fetchHistoricalPrices } from '../../data/market.js';
+import { SIGNAL_CONFIG } from '../../signal-engine/config.js';
 
 type SubSignal = {
   signal: 'bullish' | 'bearish' | 'neutral';
@@ -151,10 +152,16 @@ function calculateMeanReversionSignal(closes: number[]): SubSignal {
 
   let signal: SubSignal['signal'] = 'neutral';
   let confidence = 0.5;
-  if (zScore < -2 && priceVsBb < 0.2) {
+  if (
+    zScore < -SIGNAL_CONFIG.technical.meanReversionZScoreThreshold &&
+    priceVsBb < SIGNAL_CONFIG.technical.meanReversionBandLow
+  ) {
     signal = 'bullish';
     confidence = clamp(Math.abs(zScore) / 4, 0, 1);
-  } else if (zScore > 2 && priceVsBb > 0.8) {
+  } else if (
+    zScore > SIGNAL_CONFIG.technical.meanReversionZScoreThreshold &&
+    priceVsBb > SIGNAL_CONFIG.technical.meanReversionBandHigh
+  ) {
     signal = 'bearish';
     confidence = clamp(Math.abs(zScore) / 4, 0, 1);
   }
@@ -178,8 +185,10 @@ function calculateMomentumSignal(closes: number[], volumes: number[]): SubSignal
   const volumeMomentum = pastVol > 0 ? recentVol / pastVol - 1 : 0;
 
   let signal: SubSignal['signal'] = 'neutral';
-  if (weightedMomentum > 0.03) signal = 'bullish';
-  else if (weightedMomentum < -0.03) signal = 'bearish';
+  if (weightedMomentum > SIGNAL_CONFIG.technical.momentumBullishThreshold)
+    signal = 'bullish';
+  else if (weightedMomentum < SIGNAL_CONFIG.technical.momentumBearishThreshold)
+    signal = 'bearish';
 
   const confidence = clamp(Math.abs(weightedMomentum) * 10 + Math.max(volumeMomentum, 0), 0, 1);
   return {
@@ -203,8 +212,10 @@ function calculateVolatilitySignal(closes: number[]): SubSignal {
     : 50;
 
   let signal: SubSignal['signal'] = 'neutral';
-  if (percentile < 30) signal = 'bullish';
-  else if (percentile > 70) signal = 'bearish';
+  if (percentile < SIGNAL_CONFIG.technical.volatilityPercentileLow)
+    signal = 'bullish';
+  else if (percentile > SIGNAL_CONFIG.technical.volatilityPercentileHigh)
+    signal = 'bearish';
   const confidence = clamp(Math.abs(percentile - 50) / 50, 0, 1);
 
   return {
@@ -221,8 +232,10 @@ function calculateStatArbSignal(closes: number[]): SubSignal {
   const sd = stdDev(window) || 1;
   const zScore = (closes[closes.length - 1] - mean) / sd;
   let signal: SubSignal['signal'] = 'neutral';
-  if (zScore < -1.5) signal = 'bullish';
-  else if (zScore > 1.5) signal = 'bearish';
+  if (zScore < -SIGNAL_CONFIG.technical.statArbZScoreThreshold)
+    signal = 'bullish';
+  else if (zScore > SIGNAL_CONFIG.technical.statArbZScoreThreshold)
+    signal = 'bearish';
   const confidence = clamp(Math.abs(zScore) / 3, 0, 1);
   return {
     signal,
@@ -248,17 +261,17 @@ export async function runTechnicalAnalysis(ticker: string): Promise<TechnicalSig
   const statArb = calculateStatArbSignal(closes);
 
   const weightedScore =
-    trend.score * 0.25 +
-    meanReversion.score * 0.2 +
-    momentum.score * 0.25 +
-    volatility.score * 0.15 +
-    statArb.score * 0.15;
+    trend.score * SIGNAL_CONFIG.technical.trendWeight +
+    meanReversion.score * SIGNAL_CONFIG.technical.meanReversionWeight +
+    momentum.score * SIGNAL_CONFIG.technical.momentumWeight +
+    volatility.score * SIGNAL_CONFIG.technical.volatilityWeight +
+    statArb.score * SIGNAL_CONFIG.technical.statArbWeight;
   const score = clamp(weightedScore, -1, 1);
   const confidence = clamp(Math.abs(score), 0, 1);
 
   let signal: TechnicalSignal['signal'] = 'neutral';
-  if (score > 0.1) signal = 'bullish';
-  else if (score < -0.1) signal = 'bearish';
+  if (score > SIGNAL_CONFIG.technical.signalBullishThreshold) signal = 'bullish';
+  else if (score < SIGNAL_CONFIG.technical.signalBearishThreshold) signal = 'bearish';
 
   return {
     ticker,

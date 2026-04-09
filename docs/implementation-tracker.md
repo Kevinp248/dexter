@@ -40,8 +40,8 @@ Branch: `feature-kevin-dexter`
 - [x] Document how to run validation suite without Bun.
 
 ### Phase 2B - Signal calibration and explainability (Planned)
-- [ ] Externalize weights/thresholds into a versioned config.
-- [ ] Add change log for threshold updates (what changed and why).
+- [x] Externalize weights/thresholds into a versioned config.
+- [x] Add change log for threshold updates (what changed and why).
 - [ ] Add "why changed vs previous day" output.
 
 ### Phase 3 - Operational hardening (Planned)
@@ -67,10 +67,10 @@ Branch: `feature-kevin-dexter`
 
 ## Next Steps (Ordered)
 
-1. Begin Phase 2B config externalization (weights/thresholds file).
-2. Add "why changed vs previous day" delta output for each ticker.
-3. Add daily scheduler playbook and runbook for manual trade review.
-4. Add Canadian ticker nuance checks (liquidity + exchange metadata validation).
+1. Add "why changed vs previous day" delta output for each ticker.
+2. Add daily scheduler playbook and runbook for manual trade review.
+3. Add Canadian ticker nuance checks (liquidity + exchange metadata validation).
+4. Add retry/fallback policy for unavailable data sources.
 
 ## Work Log
 
@@ -94,4 +94,9 @@ Branch: `feature-kevin-dexter`
   - Added multi-ticker correlation regression case (expect correlation multiplier = 0.7).
   - Added explicit cost-stress downgrade regression (`BUY` -> `HOLD`) with execution overrides.
   - Added execution stress CLI flags (`--cost-multiplier`, `--min-edge-bps`).
+  - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 13 tests, 1 snapshot).
+- 2026-04-09:
+  - Externalized major strategy constants into versioned config (`src/signal-engine/config.ts`, v1.0.0).
+  - Refactored signal rules, execution model, risk model, and technical/fundamental/valuation analyzers to consume config.
+  - Added parameter change log (`docs/parameter-changelog.md`) and README references.
   - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 13 tests, 1 snapshot).

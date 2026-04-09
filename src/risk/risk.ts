@@ -1,5 +1,6 @@
 import { FundamentalSignal } from '../agents/analysis/fundamentals.js';
 import { TechnicalSignal } from '../agents/analysis/technical.js';
+import { SIGNAL_CONFIG } from '../signal-engine/config.js';
 
 export interface RiskAssessment {
   ticker: string;
@@ -18,22 +19,34 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function calculateVolatilityAdjustedLimit(annualizedVolatility: number): number {
-  const baseLimit = 0.2;
+  const baseLimit = SIGNAL_CONFIG.risk.baseLimit;
   let multiplier = 1.0;
-  if (annualizedVolatility < 0.15) multiplier = 1.25;
-  else if (annualizedVolatility < 0.3) multiplier = 1.0 - (annualizedVolatility - 0.15) * 0.5;
-  else if (annualizedVolatility < 0.5) multiplier = 0.75 - (annualizedVolatility - 0.3) * 0.5;
+  if (annualizedVolatility < SIGNAL_CONFIG.risk.lowVolThreshold) multiplier = 1.25;
+  else if (annualizedVolatility < SIGNAL_CONFIG.risk.mediumVolThreshold)
+    multiplier =
+      1.0 -
+      (annualizedVolatility - SIGNAL_CONFIG.risk.lowVolThreshold) * 0.5;
+  else if (annualizedVolatility < SIGNAL_CONFIG.risk.highVolThreshold)
+    multiplier =
+      0.75 -
+      (annualizedVolatility - SIGNAL_CONFIG.risk.mediumVolThreshold) * 0.5;
   else multiplier = 0.5;
-  multiplier = clamp(multiplier, 0.25, 1.25);
+  multiplier = clamp(
+    multiplier,
+    SIGNAL_CONFIG.risk.minLimitMultiplier,
+    SIGNAL_CONFIG.risk.maxLimitMultiplier,
+  );
   return baseLimit * multiplier;
 }
 
 function correlationMultiplier(avgCorrelation: number): number {
-  if (avgCorrelation >= 0.8) return 0.7;
-  if (avgCorrelation >= 0.6) return 0.85;
-  if (avgCorrelation >= 0.4) return 1.0;
-  if (avgCorrelation >= 0.2) return 1.05;
-  return 1.1;
+  const bands = SIGNAL_CONFIG.risk.correlationBands;
+  const multipliers = SIGNAL_CONFIG.risk.correlationMultipliers;
+  if (avgCorrelation >= bands.veryHigh) return multipliers.veryHigh;
+  if (avgCorrelation >= bands.high) return multipliers.high;
+  if (avgCorrelation >= bands.medium) return multipliers.medium;
+  if (avgCorrelation >= bands.low) return multipliers.low;
+  return multipliers.veryLow;
 }
 
 export function reviewRisk(
@@ -42,20 +55,40 @@ export function reviewRisk(
   averageCorrelation?: number | null,
 ): RiskAssessment {
   const volatility = clamp(technical.volatility, 0, 2);
-  const volatilityScore = clamp(1 - volatility / 0.8, 0, 1);
+  const volatilityScore = clamp(1 - volatility / SIGNAL_CONFIG.risk.riskVolScale, 0, 1);
   const debtToEquity = fundamental.metrics.debtToEquity ?? 1;
-  const debtPenalty = clamp((debtToEquity - 1) / 3, 0, 0.3);
-  const corrMult = correlationMultiplier(averageCorrelation ?? 0.4);
+  const debtPenalty = clamp(
+    (debtToEquity - 1) / SIGNAL_CONFIG.risk.debtPenaltyScale,
+    0,
+    0.3,
+  );
+  const corrMult = correlationMultiplier(
+    averageCorrelation ?? SIGNAL_CONFIG.risk.correlationBands.medium,
+  );
   const baseLimit = calculateVolatilityAdjustedLimit(volatility);
   const combinedLimitPct = baseLimit * corrMult;
-  const riskScore = clamp(volatilityScore - debtPenalty, 0, 1) * clamp(corrMult, 0.7, 1.1);
-  const maxAllocation = clamp(combinedLimitPct, 0.05, 0.3);
+  const minCorrMult = SIGNAL_CONFIG.risk.correlationMultipliers.veryHigh;
+  const maxCorrMult = SIGNAL_CONFIG.risk.correlationMultipliers.veryLow;
+  const riskScore =
+    clamp(volatilityScore - debtPenalty, 0, 1) * clamp(corrMult, minCorrMult, maxCorrMult);
+  const maxAllocation = clamp(
+    combinedLimitPct,
+    SIGNAL_CONFIG.risk.maxAllocationMin,
+    SIGNAL_CONFIG.risk.maxAllocationMax,
+  );
   const checks: string[] = [];
-  if (volatility > 0.45) checks.push('Elevated annualized volatility');
+  if (volatility > SIGNAL_CONFIG.risk.volatilityCheckThreshold)
+    checks.push('Elevated annualized volatility');
   if (debtToEquity > 2) checks.push('High debt-to-equity');
-  if (fundamental.metrics.peRatio && fundamental.metrics.peRatio > 40)
+  if (
+    fundamental.metrics.peRatio &&
+    fundamental.metrics.peRatio > SIGNAL_CONFIG.risk.expensivePeThreshold
+  )
     checks.push('Expensive valuation');
-  if ((averageCorrelation ?? 0) > 0.75) checks.push('High correlation to existing basket');
+  if (
+    (averageCorrelation ?? 0) > SIGNAL_CONFIG.risk.concentrationCorrelationThreshold
+  )
+    checks.push('High correlation to existing basket');
 
   return {
     ticker: technical.ticker,

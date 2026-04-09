@@ -5,6 +5,7 @@ import { runValuationAnalysis } from '../agents/analysis/valuation.js';
 import { reviewRisk } from '../risk/risk.js';
 import { logger } from '../utils/logger.js';
 import { getWatchlistForTickers } from '../watchlists/watchlists.js';
+import { SIGNAL_CONFIG } from './config.js';
 import {
   estimateExecutionCosts,
   estimateTargetNotionalUsd,
@@ -95,7 +96,7 @@ function estimatePriceFromTechnical(
 ): number {
   const latest = technical.bars[technical.bars.length - 1];
   if (latest && Number.isFinite(latest.close) && latest.close > 0) return latest.close;
-  return 100;
+  return SIGNAL_CONFIG.execution.fallbackEstimatedPrice;
 }
 
 type InterimAnalysis = {
@@ -203,10 +204,10 @@ export async function runDailyScan(
     const avgCorr = averageCorrelationForTicker(item.ticker, returnsByTicker);
     const risk = reviewRisk(item.technical, item.fundamental, avgCorr);
     const weightedInputs = {
-      technical: item.technical.score * 0.3,
-      fundamentals: item.fundamental.score * 0.25,
-      valuation: item.valuation.score * 0.3,
-      sentiment: item.sentiment.score * 0.15,
+      technical: item.technical.score * SIGNAL_CONFIG.aggregateWeights.technical,
+      fundamentals: item.fundamental.score * SIGNAL_CONFIG.aggregateWeights.fundamentals,
+      valuation: item.valuation.score * SIGNAL_CONFIG.aggregateWeights.valuation,
+      sentiment: item.sentiment.score * SIGNAL_CONFIG.aggregateWeights.sentiment,
     };
     const aggregateScore = clamp(
       weightedInputs.technical +

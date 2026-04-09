@@ -1,4 +1,5 @@
 import { WatchlistEntry } from '../watchlists/watchlists.js';
+import { SIGNAL_CONFIG } from './config.js';
 import {
   PortfolioConstraintEvaluation,
   ScanOptions,
@@ -25,8 +26,12 @@ export function evaluatePortfolioConstraints(
   const currentGross = portfolioContext?.grossExposurePct ?? 0;
   const currentSector =
     portfolioContext?.sectorExposurePct?.[inputs.watchlist.sector] ?? 0;
-  const maxGross = portfolioContext?.maxGrossExposurePct ?? 1.0;
-  const maxSector = portfolioContext?.maxSectorExposurePct ?? 0.35;
+  const maxGross =
+    portfolioContext?.maxGrossExposurePct ??
+    SIGNAL_CONFIG.portfolio.defaultMaxGrossExposurePct;
+  const maxSector =
+    portfolioContext?.maxSectorExposurePct ??
+    SIGNAL_CONFIG.portfolio.defaultMaxSectorExposurePct;
 
   const tradeExposurePct =
     inputs.portfolioValue > 0 ? inputs.notionalUsd / inputs.portfolioValue : 0;
