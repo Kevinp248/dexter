@@ -1,9 +1,11 @@
 import { Container, Spacer, Text, type TUI } from '@mariozechner/pi-tui';
 import type { ApprovalDecision } from '../agent/types.js';
 import { theme } from '../theme.js';
+import { subscribeSpinner } from '../utils/spinner.js';
+
+const CIRCLE = '⏺';
 
 function formatToolName(name: string): string {
-  // Strip common verb prefixes for cleaner display (get_financials → Financials)
   const stripped = name.replace(/^(get)_/, '');
   return stripped
     .split('_')
@@ -56,40 +58,46 @@ function approvalLabel(decision: ApprovalDecision): string {
   }
 }
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
 export class ToolEventComponent extends Container {
-  private readonly tui: TUI;
   private readonly header: Text;
+  private readonly toolTitle: string;
   private completedDetails: Text[] = [];
   private activeDetail: Text | null = null;
-  private spinnerInterval: ReturnType<typeof setInterval> | null = null;
-  private spinnerFrame: number = 0;
+  private unsubscribeSpinner: (() => void) | null = null;
+  private blinkVisible: boolean = true;
+  private blinkCounter: number = 0;
 
-  constructor(tui: TUI, tool: string, args: Record<string, unknown>) {
+  constructor(_tui: TUI, tool: string, args: Record<string, unknown>) {
     super();
-    this.tui = tui;
     this.addChild(new Spacer(1));
-    const title = `${formatToolName(tool)}${args ? `${theme.muted('(')}${formatArgs(tool, args)}${theme.muted(')')}` : ''}`;
-    this.header = new Text(`⏺ ${title}`, 0, 0);
+    this.toolTitle = `${formatToolName(tool)}${args ? `${theme.muted('(')}${formatArgs(tool, args)}${theme.muted(')')}` : ''}`;
+    this.header = new Text(`${theme.success(CIRCLE)} ${this.toolTitle}`, 0, 0);
     this.addChild(this.header);
   }
 
   setActive(progressMessage?: string) {
     this.clearDetail();
-    const message = progressMessage || 'Searching...';
-    this.activeDetail = new Text(`${theme.muted(`⎿  ${SPINNER_FRAMES[0]}`)} ${message}`, 0, 0);
-    this.addChild(this.activeDetail);
-    this.spinnerFrame = 0;
-    this.spinnerInterval = setInterval(() => {
-      this.spinnerFrame = (this.spinnerFrame + 1) % SPINNER_FRAMES.length;
-      this.activeDetail?.setText(`${theme.muted(`⎿  ${SPINNER_FRAMES[this.spinnerFrame]}`)} ${message}`);
-      this.tui.requestRender();
-    }, 80);
+    // Pulsing circle: blink the header circle using the shared spinner clock
+    this.blinkCounter = 0;
+    this.blinkVisible = true;
+    this.header.setText(`${theme.success(CIRCLE)} ${this.toolTitle}`);
+    this.unsubscribeSpinner = subscribeSpinner(() => {
+      this.blinkCounter++;
+      if (this.blinkCounter % 4 === 0) {
+        this.blinkVisible = !this.blinkVisible;
+        const circle = this.blinkVisible ? theme.success(CIRCLE) : ' ';
+        this.header.setText(`${circle} ${this.toolTitle}`);
+      }
+    });
+    if (progressMessage) {
+      this.activeDetail = new Text(`${theme.muted('⎿  ')}${progressMessage}`, 0, 0);
+      this.addChild(this.activeDetail);
+    }
   }
 
   setComplete(summary: string, duration: number) {
     this.clearDetail();
+    this.header.setText(`${theme.primary(CIRCLE)} ${this.toolTitle}`);
     const detail = new Text(
       `${theme.muted('⎿  ')}${summary}${theme.muted(` in ${formatDuration(duration)}`)}`,
       0,
@@ -101,6 +109,8 @@ export class ToolEventComponent extends Container {
 
   setError(error: string) {
     this.clearDetail();
+    // Solid red circle
+    this.header.setText(`${theme.error(CIRCLE)} ${this.toolTitle}`);
     const detail = new Text(`${theme.muted('⎿  ')}${theme.error(`Error: ${truncateAtWord(error, 80)}`)}`, 0, 0);
     this.completedDetails.push(detail);
     this.addChild(detail);
@@ -118,6 +128,7 @@ export class ToolEventComponent extends Container {
 
   setDenied(path: string, tool: string) {
     this.clearDetail();
+    this.header.setText(`${theme.error(CIRCLE)} ${this.toolTitle}`);
     const action = tool === 'write_file' ? 'write to' : tool === 'edit_file' ? 'edit of' : tool;
     const detail = new Text(`${theme.muted('⎿  ')}${theme.warning(`User denied ${action} ${path}`)}`, 0, 0);
     this.completedDetails.push(detail);
@@ -127,6 +138,8 @@ export class ToolEventComponent extends Container {
   setApproval(decision: ApprovalDecision) {
     this.clearDetail();
     const color = decision !== 'deny' ? theme.primary : theme.warning;
+    const circle = decision !== 'deny' ? theme.success(CIRCLE) : theme.error(CIRCLE);
+    this.header.setText(`${circle} ${this.toolTitle}`);
     const detail = new Text(`${theme.muted('⎿  ')}${color(approvalLabel(decision))}`, 0, 0);
     this.completedDetails.push(detail);
     this.addChild(detail);
@@ -137,9 +150,9 @@ export class ToolEventComponent extends Container {
   }
 
   private clearDetail() {
-    if (this.spinnerInterval) {
-      clearInterval(this.spinnerInterval);
-      this.spinnerInterval = null;
+    if (this.unsubscribeSpinner) {
+      this.unsubscribeSpinner();
+      this.unsubscribeSpinner = null;
     }
     if (this.activeDetail) {
       this.removeChild(this.activeDetail);
