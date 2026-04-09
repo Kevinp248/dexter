@@ -3,6 +3,7 @@ import { config } from 'dotenv';
 import { logger } from '../utils/logger.js';
 import { loadPreviousSignalsByTicker, saveLatestScan } from './history.js';
 import { runDailyScan } from './index.js';
+import { loadPositionContexts } from './portfolio-ledger.js';
 import { ScanOptions } from './models.js';
 
 config({ quiet: true });
@@ -121,7 +122,16 @@ function parseArgs(argv: string[]): ScanOptions {
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const cliOptions = parseArgs(process.argv.slice(2));
+  const storedPositions = await loadPositionContexts();
+  const mergedPositions = {
+    ...storedPositions,
+    ...(cliOptions.positions ?? {}),
+  };
+  const options: ScanOptions = {
+    ...cliOptions,
+    positions: Object.keys(mergedPositions).length ? mergedPositions : undefined,
+  };
   options.previousSignalsByTicker = await loadPreviousSignalsByTicker();
   const scan = await runDailyScan(options);
   await saveLatestScan(scan);

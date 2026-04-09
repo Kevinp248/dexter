@@ -52,6 +52,12 @@ If either fails, do not trust fresh signals until fixed.
 
 ## 4) Step 2: Generate today’s signals
 
+Optional but recommended before scanning: log any new manual fills so position state stays accurate.
+
+```bash
+bun run trade:ledger record --ticker AAPL --side BUY --qty 10 --price 200 --fee 1
+```
+
 Default watchlist:
 ```bash
 bun run scan:daily
@@ -66,6 +72,10 @@ With current position context:
 ```bash
 bun run scan:daily --tickers NVDA --position NVDA:short:120
 ```
+
+Note:
+- Scanner now auto-loads stored position context from `.dexter/signal-engine/positions.json`.
+- `--position` still works and overrides stored values for the current run.
 
 With portfolio guardrails:
 ```bash
@@ -161,3 +171,5 @@ When editing `src/signal-engine/config.ts`:
   - `docs/paper-trade-log-template.md`
 - Weekly performance review:
   - `docs/weekly-performance-review.md`
+- Position ledger:
+  - `docs/position-ledger.md`

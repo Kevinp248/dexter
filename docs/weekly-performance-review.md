@@ -8,6 +8,8 @@ Use this once per week to audit signal quality and your manual decisions.
 
 - Store your CSV at:
   - `.dexter/signal-engine/paper-trade-log.csv`
+- Keep fills synced in position ledger:
+  - `bun run trade:ledger record ...`
 - Use header from:
   - `docs/paper-trade-log-template.md`
 

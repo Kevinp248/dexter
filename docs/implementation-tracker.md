@@ -67,12 +67,13 @@ Branch: `feature-kevin-dexter`
 4. Added unit tests for deterministic action rules (`BUY/SELL/HOLD/COVER`).
 5. Added execution-cost realism + portfolio-level exposure guardrails.
 6. Added walk-forward split policy utilities with purged/embargo-aware fold generation + validation tests.
+7. Added persistent fill ledger + derived position state for carry-forward position context.
 
 ## Next Steps (Ordered)
 
-1. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
-2. Add CSV export for daily signals + fallback diagnostics.
-3. Add a simple CLI/report wrapper that prints walk-forward folds for a date range.
+1. Add mark-to-market P&L on each daily scan using stored positions.
+2. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
+3. Add CSV export for daily signals + fallback diagnostics.
 4. Add monthly calibration memo template using weekly review output.
 
 ## Work Log
@@ -134,3 +135,8 @@ Branch: `feature-kevin-dexter`
   - Added deterministic parser/summary logic for win rate, avg/median result, fallback hygiene, and override discipline.
   - Added weekly review tests and included them in `npm run test:signals`.
   - Added weekly review runbook docs and expanded paper-trade template with fallback retry columns.
+- 2026-04-09:
+  - Added persistent fill ledger (`fills.jsonl`) and derived positions state (`positions.json`).
+  - Added `bun run trade:ledger` commands (`record`, `show`, `rebuild`) for manual/paper fills.
+  - Daily scanner now auto-loads stored position context and still supports CLI overrides.
+  - Added deterministic tests for cost-basis and realized-P&L math in position ledger.

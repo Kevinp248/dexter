@@ -185,6 +185,19 @@ bun run review:weekly
 Weekly review guide:
 `docs/weekly-performance-review.md`
 
+Record real/paper fills to persistent ledger:
+```bash
+bun run trade:ledger record --ticker AAPL --side BUY --qty 10 --price 200 --fee 1
+```
+
+Show current derived positions:
+```bash
+bun run trade:ledger show
+```
+
+Position ledger guide:
+`docs/position-ledger.md`
+
 Versioned strategy parameters:
 - `src/signal-engine/config.ts`
 - `docs/parameter-changelog.md`

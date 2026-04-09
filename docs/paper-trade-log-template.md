@@ -1,6 +1,8 @@
 # Paper Trade Log Template
 
 Use this after each scan and manual decision.
+For fill-level position tracking, also log each fill through:
+- `bun run trade:ledger record ...`
 
 Recommended file path for weekly review script:
 - `.dexter/signal-engine/paper-trade-log.csv`
