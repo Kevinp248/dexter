@@ -26,6 +26,7 @@ If commands, thresholds, or workflow change, update this file in the same PR.
 4. Decide manually whether to execute.
 5. Log your action for later review.
 6. Run weekly performance review once per week.
+7. Run postmortem + calibration workflow only after enough closed trades.
 
 Do not skip step 1.
 
@@ -62,6 +63,13 @@ Default watchlist:
 ```bash
 bun run scan:daily
 ```
+
+Single-command operator workflow (recommended):
+```bash
+bun run ops:daily --tickers AAPL,MSFT,SHOP
+```
+
+This command runs scan + CSV logging + history snapshot + weekly/quality summaries + next-action checklist.
 
 Auto-log each alert row into paper-trade CSV during scan:
 ```bash
@@ -165,6 +173,46 @@ bun run quality:signals
 
 Use this to monitor hit rate by `finalAction` and confidence bucket.
 
+## 8.3) Postmortem (loss/deviation diagnostics)
+
+Run postmortem incident generation:
+
+```bash
+bun run postmortem:run
+```
+
+Optional trusted-source research (Tier-1 whitelist only):
+
+```bash
+bun run postmortem:run --with-research
+```
+
+Incidents are stored at:
+- `.dexter/signal-engine/incidents.jsonl`
+
+## 8.4) Calibration proposals (manual approval only)
+
+Generate a proposal from incidents:
+
+```bash
+bun run calibration propose
+```
+
+Gate the proposal (must pass typecheck + signals + walk-forward):
+
+```bash
+bun run calibration gate --proposal proposal-YYYYMMDDHHMMSS
+```
+
+Apply only after manual sign-off:
+
+```bash
+bun run calibration apply --proposal proposal-YYYYMMDDHHMMSS --approve-by "Your Name"
+```
+
+Runtime overrides are written to:
+- `.dexter/signal-engine/config-overrides.json`
+
 ## 9) If you change strategy parameters
 
 When editing `src/signal-engine/config.ts`:
@@ -193,3 +241,6 @@ When editing `src/signal-engine/config.ts`:
   - `docs/signal-quality-dashboard.md`
 - Position ledger:
   - `docs/position-ledger.md`
+- Calibration and postmortem artifacts:
+  - `.dexter/signal-engine/incidents.jsonl`
+  - `.dexter/signal-engine/calibration/proposals/*.json`

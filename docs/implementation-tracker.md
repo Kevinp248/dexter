@@ -16,7 +16,7 @@ Branch: `feature-kevin-dexter`
 
 ## Current Phase
 
-`Phase 3` - Operational hardening
+`Phase 3B` - Grounded operations and supervised adaptation
 
 ## Phase Plan (Ordered)
 
@@ -71,13 +71,17 @@ Branch: `feature-kevin-dexter`
 8. Added mark-to-market P&L fields in daily scan output using stored ledger cost basis.
 9. Added signal-quality dashboard metrics (hit rate by action/confidence bucket).
 10. Added automatic CSV export of daily alerts with fallback diagnostics.
+11. Added trusted-source grounding guardrail (Tier-1 whitelist + evidence bundles).
+12. Added postmortem incident engine for losses and edge-divergence cases.
+13. Added calibration proposal pipeline with gated checks and manual approval apply.
+14. Added a single-command operator workflow (`bun run ops:daily`).
 
 ## Next Steps (Ordered)
 
-1. Add monthly calibration memo template using weekly review output.
-2. Add a quick command to print open-position risk summary before market open.
-3. Add confidence-calibration guardrails when high-confidence bucket underperforms.
-4. Add monthly report export that combines weekly + quality summaries.
+1. Add a proposal diff preview command (current config vs runtime overrides).
+2. Externalize trusted-source whitelist into a managed config file.
+3. Add ticker-level postmortem severity policy (warn-only vs temporary trade block).
+4. Add monthly report export combining weekly + quality + postmortem summaries.
 
 ## Work Log
 
@@ -160,3 +164,9 @@ Branch: `feature-kevin-dexter`
   - Added de-duplication guard for auto-log rows (same `Date + Ticker` skips duplicates).
   - Kept multi-ticker same-day logging enabled for broader watchlists.
   - Added docs/examples for recording and selling multiple tickers via trade ledger.
+- 2026-04-09:
+  - Added `src/signal-engine/grounded-research.ts` with Tier-1 trusted-source URL guardrails and evidence bundle formatting.
+  - Added `src/signal-engine/postmortem.ts` + `src/signal-engine/postmortem.cli.ts` for deterministic loss/deviation incident generation.
+  - Added `src/signal-engine/calibration.ts` + `src/signal-engine/calibration.cli.ts` for proposal -> gate -> manual apply workflow.
+  - Added runtime config overrides loading from `.dexter/signal-engine/config-overrides.json`.
+  - Added `src/signal-engine/daily-operator.ts` + `src/signal-engine/daily-operator.cli.ts` and script `bun run ops:daily`.

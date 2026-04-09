@@ -200,6 +200,13 @@ bun run scan:daily:log --tickers AAPL
 
 This auto-log mode dedupes repeated same-day rows for the same ticker.
 
+Single-command daily operator workflow:
+```bash
+bun run ops:daily --tickers AAPL,MSFT
+```
+
+This runs scan + CSV logging + quick weekly/quality checks + plain-English next steps.
+
 Record real/paper fills to persistent ledger:
 ```bash
 bun run trade:ledger record --ticker AAPL --side BUY --qty 10 --price 200 --fee 1
@@ -208,6 +215,18 @@ bun run trade:ledger record --ticker AAPL --side BUY --qty 10 --price 200 --fee 
 Show current derived positions:
 ```bash
 bun run trade:ledger show
+```
+
+Generate loss/deviation postmortems:
+```bash
+bun run postmortem:run
+```
+
+Create/gate/apply calibration proposals (manual approval required):
+```bash
+bun run calibration propose
+bun run calibration gate --proposal proposal-YYYYMMDDHHMMSS
+bun run calibration apply --proposal proposal-YYYYMMDDHHMMSS --approve-by "Your Name"
 ```
 
 Position ledger guide:
