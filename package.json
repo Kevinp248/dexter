@@ -1,6 +1,6 @@
 {
   "name": "dexter-ts",
-  "version": "2026.4.8",
+  "version": "2026.4.1",
   "description": "Dexter - AI agent for deep financial research.",
   "type": "module",
   "main": "src/index.tsx",
@@ -15,6 +15,11 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:watch": "bun test --watch",
+    "test:signals": "npx jest --runInBand src/signal-engine/__tests__/rules.test.ts src/signal-engine/__tests__/daily-scan.integration.test.ts src/signal-engine/__tests__/walk-forward.test.ts src/signal-engine/__tests__/weekly-review.test.ts src/signal-engine/__tests__/portfolio-ledger.test.ts",
+    "test:walkforward": "npx jest --runInBand src/signal-engine/__tests__/walk-forward.test.ts",
+    "scan:daily": "bun run src/signal-engine/daily-scan.ts",
+    "review:weekly": "bun run src/signal-engine/weekly-review.cli.ts",
+    "trade:ledger": "bun run src/signal-engine/trade-ledger.cli.ts",
     "postinstall": "playwright install chromium"
   },
   "dependencies": {

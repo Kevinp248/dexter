@@ -51,22 +51,46 @@ Write it as a clear instruction, e.g.: "Check the current price of AAPL. If it h
 - Minimum interval for "every" schedules is 60 seconds
 `.trim();
 
-const scheduleSchema = z.discriminatedUnion('kind', [
-  z.object({
-    kind: z.literal('at'),
-    at: z.string().describe('ISO-8601 timestamp for one-shot execution'),
-  }),
-  z.object({
-    kind: z.literal('every'),
-    everyMs: z.number().min(60000).describe('Interval in milliseconds (minimum 60000 = 1 minute)'),
-    anchorMs: z.number().optional().describe('Optional anchor timestamp in ms'),
-  }),
-  z.object({
-    kind: z.literal('cron'),
-    expr: z.string().describe('Cron expression (5 or 6 fields)'),
-    tz: z.string().optional().describe('IANA timezone (default: system timezone)'),
-  }),
-]);
+const scheduleSchema = z
+  .object({
+    kind: z.enum(['at', 'every', 'cron']),
+    at: z.string().describe('ISO-8601 timestamp for one-shot execution').optional(),
+    everyMs: z
+      .number()
+      .min(60000)
+      .describe('Interval in milliseconds (minimum 60000 = 1 minute)')
+      .optional(),
+    anchorMs: z
+      .number()
+      .describe('Optional anchor timestamp in ms')
+      .optional(),
+    expr: z.string().describe('Cron expression (5 or 6 fields)').optional(),
+    tz: z.string().describe('IANA timezone (default: system timezone)').optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === 'at' && !value.at) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'At schedules require an ISO-8601 timestamp in the at field.',
+        path: ['at'],
+      });
+    }
+    if (value.kind === 'every' && value.everyMs === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Every schedules require an everyMs interval.',
+        path: ['everyMs'],
+      });
+    }
+    if (value.kind === 'cron' && !value.expr) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Cron schedules require a cron expression in the expr field.',
+        path: ['expr'],
+      });
+    }
+  })
+  .transform((value) => value as CronSchedule);
 
 const cronToolSchema = z.object({
   action: z.enum(['list', 'add', 'update', 'remove', 'run']),

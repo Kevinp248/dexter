@@ -1,0 +1,244 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`runDailyScan deterministic integration snapshot: full output shape remains stable 1`] = `
+{
+  "alerts": [
+    {
+      "action": "HOLD",
+      "confidence": 41.75,
+      "delta": {
+        "actionChanged": false,
+        "aggregateScoreChange": 0,
+        "confidenceChange": 0,
+        "finalActionChanged": false,
+        "hasPrevious": false,
+        "previousGeneratedAt": null,
+        "topDrivers": [
+          "No previous scan available",
+        ],
+        "weightedInputChanges": {},
+      },
+      "executionPlan": {
+        "constraints": {
+          "blockedReasons": [],
+          "isAllowed": true,
+          "projectedGrossExposurePct": 0.3,
+          "projectedSectorExposurePct": 0.15,
+        },
+        "costEstimate": {
+          "estimatedRoundTripCostUsd": 0,
+          "expectedEdgeAfterCostsBps": 56.8,
+          "expectedEdgeBps": 93.8,
+          "isTradeableAfterCosts": true,
+          "oneWayCostBps": 18.5,
+          "roundTripCostBps": 37,
+        },
+        "estimatedPrice": 100,
+        "estimatedShares": 0,
+        "notionalUsd": 0,
+      },
+      "fallbackPolicy": {
+        "events": [
+          {
+            "attempts": 1,
+            "component": "technical",
+            "fallbackUsed": false,
+            "lastError": null,
+            "reason": "Component succeeded",
+            "retrySuggestion": "No retry needed",
+          },
+          {
+            "attempts": 1,
+            "component": "fundamental",
+            "fallbackUsed": false,
+            "lastError": null,
+            "reason": "Component succeeded",
+            "retrySuggestion": "No retry needed",
+          },
+          {
+            "attempts": 1,
+            "component": "sentiment",
+            "fallbackUsed": false,
+            "lastError": null,
+            "reason": "Component succeeded",
+            "retrySuggestion": "No retry needed",
+          },
+          {
+            "attempts": 1,
+            "component": "valuation",
+            "fallbackUsed": false,
+            "lastError": null,
+            "reason": "Component succeeded",
+            "retrySuggestion": "No retry needed",
+          },
+        ],
+        "hadFallback": false,
+      },
+      "finalAction": "HOLD",
+      "generatedAt": "2026-01-02T00:00:00.000Z",
+      "positionContext": {
+        "longShares": 0,
+        "shortShares": 0,
+      },
+      "reasoning": {
+        "aggregateScore": 0.275,
+        "components": [
+          {
+            "details": {
+              "signal": "bullish",
+              "subSignals": {
+                "meanReversion": {
+                  "confidence": 0.5,
+                  "metrics": {},
+                  "score": 0,
+                  "signal": "neutral",
+                },
+                "momentum": {
+                  "confidence": 0.5,
+                  "metrics": {},
+                  "score": 0,
+                  "signal": "neutral",
+                },
+                "statArb": {
+                  "confidence": 0.5,
+                  "metrics": {},
+                  "score": 0,
+                  "signal": "neutral",
+                },
+                "trend": {
+                  "confidence": 0.5,
+                  "metrics": {},
+                  "score": 0,
+                  "signal": "neutral",
+                },
+                "volatility": {
+                  "confidence": 0.5,
+                  "metrics": {},
+                  "score": 0,
+                  "signal": "neutral",
+                },
+              },
+              "summary": "Mock technical",
+            },
+            "name": "Technical",
+            "score": 0.4,
+          },
+          {
+            "details": {
+              "metrics": {
+                "debtToEquity": 0.4,
+                "peRatio": 20,
+              },
+              "pillars": {
+                "growth": {
+                  "details": "mock",
+                  "score": 0,
+                  "signal": "neutral",
+                },
+                "health": {
+                  "details": "mock",
+                  "score": 0,
+                  "signal": "neutral",
+                },
+                "profitability": {
+                  "details": "mock",
+                  "score": 0,
+                  "signal": "neutral",
+                },
+                "valuationRatios": {
+                  "details": "mock",
+                  "score": 0,
+                  "signal": "neutral",
+                },
+              },
+              "signal": "bullish",
+              "summary": "Mock fundamentals",
+            },
+            "name": "Fundamentals",
+            "score": 0.2,
+          },
+          {
+            "details": {
+              "methods": {
+                "dcf": {
+                  "details": "mock",
+                  "gap": 0,
+                  "signal": "neutral",
+                  "value": 100,
+                },
+                "multiples": {
+                  "details": "mock",
+                  "gap": 0,
+                  "signal": "neutral",
+                  "value": 100,
+                },
+                "ownerEarnings": {
+                  "details": "mock",
+                  "gap": 0,
+                  "signal": "neutral",
+                  "value": 100,
+                },
+                "residualIncome": {
+                  "details": "mock",
+                  "gap": 0,
+                  "signal": "neutral",
+                  "value": 100,
+                },
+              },
+              "signal": "bullish",
+              "summary": "Mock valuation",
+              "weightedGap": 0.09,
+            },
+            "name": "Valuation",
+            "score": 0.3,
+          },
+          {
+            "details": {
+              "negative": 1,
+              "positive": 3,
+              "summary": "Mock sentiment",
+            },
+            "name": "Sentiment",
+            "score": 0.1,
+          },
+        ],
+        "risk": {
+          "annualizedVolatility": 0.2,
+          "averageCorrelation": null,
+          "basePositionLimitPct": 0.195,
+          "checks": [],
+          "combinedLimitPct": 0.195,
+          "correlationMultiplier": 1,
+          "maxAllocation": 0.195,
+          "riskScore": 0.75,
+          "ticker": "SHOP",
+        },
+        "weightedInputs": {
+          "fundamentals": 0.05,
+          "sentiment": 0.015,
+          "technical": 0.12,
+          "valuation": 0.09,
+        },
+      },
+      "regionalMarketCheck": {
+        "averageDollarVolume20d": 2000000,
+        "checks": [
+          "Canadian market checks passed",
+        ],
+        "isTradeableInRegion": true,
+      },
+      "ticker": "SHOP",
+      "watchlist": {
+        "currency": "CAD",
+        "exchange": "TSX",
+        "name": "Shopify Inc.",
+        "rationale": "E-commerce platform with global expansion tailwinds.",
+        "region": "CA",
+        "sector": "E-commerce",
+        "ticker": "SHOP",
+      },
+    },
+  ],
+  "generatedAt": "2026-01-02T00:00:00.000Z",
+}
+`;

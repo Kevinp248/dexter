@@ -84,7 +84,7 @@ cp env.example .env
 # XAI_API_KEY=your-xai-api-key (optional)
 # OPENROUTER_API_KEY=your-openrouter-api-key (optional)
 
-# Institutional-grade market data for agents
+# Institutional-grade market data for agents; AAPL, NVDA, MSFT are free
 # FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
 
 # (Optional) If using Ollama locally
@@ -106,6 +106,101 @@ Or with watch mode for development:
 ```bash
 bun dev
 ```
+
+Main human-readable runbook (recommended first read):
+`docs/START-HERE-SIGNAL-GUIDE.md`
+
+### 🎯 Daily Signal Scanner
+
+The deterministic signal engine runs a small US/CA watchlist, blends technical, fundamental, sentiment, and risk reviews, and emits explainable BUY/SELL/HOLD/COVER alerts. It is broker-neutral and prints structured JSON that can be audited later.
+
+```bash
+bun run scan:daily
+```
+
+Run for specific tickers:
+```bash
+bun run scan:daily --tickers AAPL,SHOP,TD
+```
+
+Include existing position context (enables deterministic `COVER` signals):
+```bash
+bun run scan:daily --tickers NVDA --position NVDA:short:120
+```
+
+Execution realism and portfolio guardrails:
+```bash
+bun run scan:daily \
+  --tickers AAPL,MSFT \
+  --portfolio-value 150000 \
+  --gross-exposure 0.78 \
+  --max-gross 1.00 \
+  --sector-exposure Technology:0.25,Financials:0.10 \
+  --max-sector 0.35
+```
+
+Stress-test execution assumptions:
+```bash
+bun run scan:daily --tickers AAPL --cost-multiplier 8 --min-edge-bps 100
+```
+
+Delta explainability:
+- Each alert now includes `delta` fields showing what changed vs previous scan.
+- Scanner stores the latest run at `.dexter/signal-engine/last-scan.json` and compares next run against it.
+
+Retry/fallback diagnostics:
+- Each alert includes `fallbackPolicy` with:
+  - failing component(s)
+  - fallback reason
+  - retry recommendation
+- Use these before trusting a degraded signal.
+
+Canadian market nuance checks:
+- CA tickers now run exchange + liquidity checks.
+- If checks fail, `finalAction` is downgraded to `HOLD` and details appear in `regionalMarketCheck`.
+
+Add this command to a scheduler (cron, `croner`, etc.) for once-a-day execution during market hours.
+
+Core logic mapping (ai-hedge-fund + Dexter):
+`docs/core-logic-integration.md`
+
+Walk-forward validation design notes:
+`docs/walk-forward-validation.md`
+
+Deterministic signal validation (works even if Bun is unavailable in your shell):
+```bash
+npm run test:signals
+```
+
+Focused walk-forward split policy check:
+```bash
+npm run test:walkforward
+```
+
+Weekly paper-trade performance review:
+```bash
+bun run review:weekly
+```
+
+Weekly review guide:
+`docs/weekly-performance-review.md`
+
+Record real/paper fills to persistent ledger:
+```bash
+bun run trade:ledger record --ticker AAPL --side BUY --qty 10 --price 200 --fee 1
+```
+
+Show current derived positions:
+```bash
+bun run trade:ledger show
+```
+
+Position ledger guide:
+`docs/position-ledger.md`
+
+Versioned strategy parameters:
+- `src/signal-engine/config.ts`
+- `docs/parameter-changelog.md`
 
 ## 📊 How to Evaluate
 
