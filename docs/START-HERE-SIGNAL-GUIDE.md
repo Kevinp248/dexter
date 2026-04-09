@@ -148,6 +148,14 @@ If you want machine-readable output for tracking:
 bun run review:weekly --json
 ```
 
+## 8.2) Signal-quality dashboard
+
+```bash
+bun run quality:signals
+```
+
+Use this to monitor hit rate by `finalAction` and confidence bucket.
+
 ## 9) If you change strategy parameters
 
 When editing `src/signal-engine/config.ts`:
@@ -172,5 +180,7 @@ When editing `src/signal-engine/config.ts`:
   - `docs/paper-trade-log-template.md`
 - Weekly performance review:
   - `docs/weekly-performance-review.md`
+- Signal-quality dashboard:
+  - `docs/signal-quality-dashboard.md`
 - Position ledger:
   - `docs/position-ledger.md`

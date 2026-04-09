@@ -69,13 +69,14 @@ Branch: `feature-kevin-dexter`
 6. Added walk-forward split policy utilities with purged/embargo-aware fold generation + validation tests.
 7. Added persistent fill ledger + derived position state for carry-forward position context.
 8. Added mark-to-market P&L fields in daily scan output using stored ledger cost basis.
+9. Added signal-quality dashboard metrics (hit rate by action/confidence bucket).
 
 ## Next Steps (Ordered)
 
-1. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
-2. Add CSV export for daily signals + fallback diagnostics.
-3. Add monthly calibration memo template using weekly review output.
-4. Add a quick command to print open-position risk summary before market open.
+1. Add CSV export for daily signals + fallback diagnostics.
+2. Add monthly calibration memo template using weekly review output.
+3. Add a quick command to print open-position risk summary before market open.
+4. Add confidence-calibration guardrails when high-confidence bucket underperforms.
 
 ## Work Log
 
@@ -145,3 +146,8 @@ Branch: `feature-kevin-dexter`
   - Added `positionPerformance` payload with mark-to-market unrealized/realized/total P&L.
   - Wired scanner to load full stored position state for cost-basis-aware P&L.
   - Added integration regression test for P&L math and updated output snapshot baseline.
+- 2026-04-09:
+  - Added signal-quality dashboard command (`bun run quality:signals`).
+  - Added hit-rate/avg-result metrics by action and confidence buckets.
+  - Added docs and log-template update to include `Confidence` in paper-trade CSV.
+  - Added regression test coverage for dashboard aggregation logic.

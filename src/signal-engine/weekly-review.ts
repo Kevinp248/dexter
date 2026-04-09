@@ -6,6 +6,7 @@ export interface PaperTradeRow {
   ticker: string;
   action: string;
   finalAction: string;
+  confidence: number | null;
   decision: string;
   direction: string;
   resultPct: number | null;
@@ -104,6 +105,14 @@ function normalizeKey(value: string): string {
 
 function parsePercent(value: string): number | null {
   const normalized = value.replace('%', '').trim();
+  if (!normalized || normalized === '-') return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function parseNumber(value: string): number | null {
+  const normalized = value.trim();
   if (!normalized || normalized === '-') return null;
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed)) return null;
@@ -217,6 +226,9 @@ export function parsePaperTradeCsv(content: string): PaperTradeRow[] {
 
     const action = pickValue(raw, ['action', 'signalaction', 'signalrawaction']);
     const finalAction = pickValue(raw, ['finalaction', 'signalfinalaction']);
+    const confidence = parseNumber(
+      pickValue(raw, ['confidence', 'signalconfidence']),
+    );
     const decision = pickValue(raw, ['decision', 'yourdecision']);
     const direction = pickValue(raw, ['direction']);
     const resultPct = parsePercent(pickValue(raw, ['result', 'resultpct', 'resultpercent']));
@@ -235,6 +247,7 @@ export function parsePaperTradeCsv(content: string): PaperTradeRow[] {
       ticker,
       action,
       finalAction,
+      confidence,
       decision,
       direction,
       resultPct,

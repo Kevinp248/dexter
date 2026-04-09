@@ -185,6 +185,14 @@ bun run review:weekly
 Weekly review guide:
 `docs/weekly-performance-review.md`
 
+Signal-quality dashboard (hit rate by action/confidence bucket):
+```bash
+bun run quality:signals
+```
+
+Signal-quality guide:
+`docs/signal-quality-dashboard.md`
+
 Record real/paper fills to persistent ledger:
 ```bash
 bun run trade:ledger record --ticker AAPL --side BUY --qty 10 --price 200 --fee 1

@@ -9,7 +9,7 @@ Recommended file path for weekly review script:
 
 CSV header (copy/paste as first row):
 ```csv
-Date,Ticker,action,finalAction,Decision,Direction,Entry Price,Position Size (shares),Notional,Cost Estimate (USD),Key Delta Drivers,Risk Checks,Reason for Override,Exit Date,Exit Price,Result (%),Fallback Had Fallback,Fallback Reason,Fallback Retry Suggestion,Notes / Lessons
+Date,Ticker,action,finalAction,Confidence,Decision,Direction,Entry Price,Position Size (shares),Notional,Cost Estimate (USD),Key Delta Drivers,Risk Checks,Reason for Override,Exit Date,Exit Price,Result (%),Fallback Had Fallback,Fallback Reason,Fallback Retry Suggestion,Notes / Lessons
 ```
 
 ## Trade Log Columns
@@ -18,6 +18,7 @@ Date,Ticker,action,finalAction,Decision,Direction,Entry Price,Position Size (sha
 - Ticker
 - Signal `action`
 - Signal `finalAction`
+- Signal `Confidence` (0-100, from scan output)
 - Your Decision (`trade` / `skip`)
 - Direction (`long` / `exit long` / `cover short` / `none`)
 - Entry Price
