@@ -8,6 +8,20 @@ import { getWatchlistForTickers } from '../watchlists/watchlists.js';
 import { deriveConfidence, resolveAction } from './rules.js';
 import { PositionContext, ScanOptions, SignalComponent, SignalPayload } from './models.js';
 
+export interface ScanProviders {
+  runTechnicalAnalysis: typeof runTechnicalAnalysis;
+  runFundamentalAnalysis: typeof runFundamentalAnalysis;
+  runSentimentAnalysis: typeof runSentimentAnalysis;
+  runValuationAnalysis: typeof runValuationAnalysis;
+}
+
+const defaultProviders: ScanProviders = {
+  runTechnicalAnalysis,
+  runFundamentalAnalysis,
+  runSentimentAnalysis,
+  runValuationAnalysis,
+};
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -75,6 +89,7 @@ type InterimAnalysis = {
 
 export async function runDailyScan(
   options: ScanOptions = {},
+  providers: ScanProviders = defaultProviders,
 ): Promise<{ generatedAt: string; alerts: SignalPayload[] }> {
   const generatedAt = new Date().toISOString();
   const watchlist = getWatchlistForTickers(options.tickers);
@@ -83,7 +98,7 @@ export async function runDailyScan(
   for (const entry of watchlist) {
     const [technical, fundamental, sentiment, valuation] = await Promise.all([
       safeRun(
-        () => runTechnicalAnalysis(entry.ticker),
+        () => providers.runTechnicalAnalysis(entry.ticker),
         {
           ticker: entry.ticker,
           score: 0,
@@ -104,7 +119,7 @@ export async function runDailyScan(
         'technical',
       ),
       safeRun(
-        () => runFundamentalAnalysis(entry.ticker),
+        () => providers.runFundamentalAnalysis(entry.ticker),
         {
           ticker: entry.ticker,
           score: 0,
@@ -122,7 +137,7 @@ export async function runDailyScan(
         'fundamental',
       ),
       safeRun(
-        () => runSentimentAnalysis(entry.ticker),
+        () => providers.runSentimentAnalysis(entry.ticker),
         {
           ticker: entry.ticker,
           score: 0,
@@ -133,7 +148,7 @@ export async function runDailyScan(
         'sentiment',
       ),
       safeRun(
-        () => runValuationAnalysis(entry.ticker),
+        () => providers.runValuationAnalysis(entry.ticker),
         {
           ticker: entry.ticker,
           score: 0,

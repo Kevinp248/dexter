@@ -130,6 +130,11 @@ Add this command to a scheduler (cron, `croner`, etc.) for once-a-day execution 
 Core logic mapping (ai-hedge-fund + Dexter):
 `docs/core-logic-integration.md`
 
+Deterministic signal validation (works even if Bun is unavailable in your shell):
+```bash
+npm run test:signals
+```
+
 ## 📊 How to Evaluate
 
 Dexter includes an evaluation suite that tests the agent against a dataset of financial questions. Evals use LangSmith for tracking and an LLM-as-judge approach for scoring correctness.

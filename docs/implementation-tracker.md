@@ -16,7 +16,7 @@ Branch: `feature-kevin-dexter`
 
 ## Current Phase
 
-`Phase 2A` - Deterministic validation harness and golden scenarios
+`Phase 2A` - Deterministic validation harness and golden scenarios (in execution)
 
 ## Phase Plan (Ordered)
 
@@ -30,14 +30,14 @@ Branch: `feature-kevin-dexter`
 - [x] Add core logic mapping doc.
 
 ### Phase 2A - Deterministic validation harness (In Progress)
-- [ ] Add integration test harness for `runDailyScan` using mocked data.
+- [x] Add integration test harness for `runDailyScan` using mocked data.
 - [ ] Add golden scenarios:
-  - [ ] strong bullish -> `BUY`
-  - [ ] strong bearish -> `SELL`
-  - [ ] mixed/conflicted -> `HOLD`
-  - [ ] short position + thesis flip -> `COVER`
+  - [x] strong bullish -> `BUY`
+  - [x] strong bearish -> `SELL`
+  - [x] mixed/conflicted -> `HOLD`
+  - [x] short position + thesis flip -> `COVER`
 - [ ] Add fixture snapshots for expected JSON output shape.
-- [ ] Document how to run validation suite without Bun.
+- [x] Document how to run validation suite without Bun.
 
 ### Phase 2B - Signal calibration and explainability (Planned)
 - [ ] Externalize weights/thresholds into a versioned config.
@@ -59,10 +59,10 @@ Branch: `feature-kevin-dexter`
 
 ## Next Steps (Ordered)
 
-1. Implement integration test harness with mocked market/fundamental/news inputs.
-2. Create 4 golden scenario fixtures and expected outputs.
-3. Add npm command for integration validation.
-4. Run full validation and record pass/fail in `Work Log`.
+1. Add snapshot-style fixture test for full JSON output shape from `runDailyScan`.
+2. Add one regression case covering multi-ticker correlation adjustment in risk scoring.
+3. Run `npm run test:signals` and record stable baseline outputs in docs.
+4. Begin Phase 2B config externalization (weights/thresholds file).
 
 ## Work Log
 
@@ -70,3 +70,8 @@ Branch: `feature-kevin-dexter`
   - Completed core integration and pushed to `feature-kevin-dexter` (`6c212de`).
   - Added this tracker file to preserve continuity across context resets.
   - Next target set to `Phase 2A`.
+- 2026-04-09:
+  - Implemented `runDailyScan` integration harness via provider injection.
+  - Added 4 deterministic golden scenario tests (`BUY/SELL/HOLD/COVER`).
+  - Added `npm run test:signals` and README validation command.
+  - Validation status: `typecheck` pass, `npx jest` pass, `npm run test:signals` pass (2 suites, 9 tests).
