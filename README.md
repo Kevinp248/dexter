@@ -84,7 +84,7 @@ cp env.example .env
 # XAI_API_KEY=your-xai-api-key (optional)
 # OPENROUTER_API_KEY=your-openrouter-api-key (optional)
 
-# Institutional-grade market data for agents
+# Institutional-grade market data for agents; AAPL, NVDA, MSFT are free
 # FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
 
 # (Optional) If using Ollama locally
@@ -106,6 +106,16 @@ Or with watch mode for development:
 ```bash
 bun dev
 ```
+
+### 🎯 Daily Signal Scanner
+
+The deterministic signal engine runs a small US/CA watchlist, blends technical, fundamental, sentiment, and risk reviews, and emits explainable BUY/SELL/HOLD/COVER alerts. It is broker-neutral and prints structured JSON that can be audited later.
+
+```bash
+bun run src/signal-engine/daily-scan.ts
+```
+
+Add this command to a scheduler (cron, `croner`, etc.) for once-a-day execution during market hours.
 
 ## 📊 How to Evaluate
 
