@@ -45,6 +45,10 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function roundTo(value: number, digits: number): number {
+  return Number(value.toFixed(digits));
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -169,18 +173,18 @@ function buildPositionPerformance(
     return {
       hasOpenPosition,
       isCostBasisAvailable,
-      markPrice,
+      markPrice: roundTo(markPrice, 2),
       longShares: position.longShares,
       shortShares: position.shortShares,
       longCostBasis,
       shortCostBasis,
-      longMarketValueUsd,
-      shortMarketValueUsd,
-      netExposureUsd,
+      longMarketValueUsd: roundTo(longMarketValueUsd, 2),
+      shortMarketValueUsd: roundTo(shortMarketValueUsd, 2),
+      netExposureUsd: roundTo(netExposureUsd, 2),
       unrealizedPnlUsd: 0,
       unrealizedPnlPct: 0,
-      realizedPnlUsd: positionState?.realizedPnlUsd ?? 0,
-      totalPnlUsd: positionState?.realizedPnlUsd ?? 0,
+      realizedPnlUsd: roundTo(positionState?.realizedPnlUsd ?? 0, 2),
+      totalPnlUsd: roundTo(positionState?.realizedPnlUsd ?? 0, 2),
       notes: ['No open position'],
     };
   }
@@ -189,14 +193,14 @@ function buildPositionPerformance(
     return {
       hasOpenPosition,
       isCostBasisAvailable,
-      markPrice,
+      markPrice: roundTo(markPrice, 2),
       longShares: position.longShares,
       shortShares: position.shortShares,
       longCostBasis,
       shortCostBasis,
-      longMarketValueUsd,
-      shortMarketValueUsd,
-      netExposureUsd,
+      longMarketValueUsd: roundTo(longMarketValueUsd, 2),
+      shortMarketValueUsd: roundTo(shortMarketValueUsd, 2),
+      netExposureUsd: roundTo(netExposureUsd, 2),
       unrealizedPnlUsd: null,
       unrealizedPnlPct: null,
       realizedPnlUsd: null,
@@ -223,18 +227,18 @@ function buildPositionPerformance(
   return {
     hasOpenPosition,
     isCostBasisAvailable,
-    markPrice,
+    markPrice: roundTo(markPrice, 2),
     longShares: position.longShares,
     shortShares: position.shortShares,
-    longCostBasis,
-    shortCostBasis,
-    longMarketValueUsd,
-    shortMarketValueUsd,
-    netExposureUsd,
-    unrealizedPnlUsd,
-    unrealizedPnlPct,
-    realizedPnlUsd,
-    totalPnlUsd,
+    longCostBasis: longCostBasis === null ? null : roundTo(longCostBasis, 4),
+    shortCostBasis: shortCostBasis === null ? null : roundTo(shortCostBasis, 4),
+    longMarketValueUsd: roundTo(longMarketValueUsd, 2),
+    shortMarketValueUsd: roundTo(shortMarketValueUsd, 2),
+    netExposureUsd: roundTo(netExposureUsd, 2),
+    unrealizedPnlUsd: roundTo(unrealizedPnlUsd, 2),
+    unrealizedPnlPct: unrealizedPnlPct === null ? null : roundTo(unrealizedPnlPct, 4),
+    realizedPnlUsd: roundTo(realizedPnlUsd, 2),
+    totalPnlUsd: roundTo(totalPnlUsd, 2),
     notes: [],
   };
 }
