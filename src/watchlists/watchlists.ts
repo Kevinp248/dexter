@@ -71,3 +71,31 @@ const WATCHLIST: WatchlistEntry[] = [
 export function getDefaultWatchlist(): WatchlistEntry[] {
   return [...WATCHLIST];
 }
+
+export function getWatchlistForTickers(tickers?: string[]): WatchlistEntry[] {
+  if (!tickers || tickers.length === 0) {
+    return getDefaultWatchlist();
+  }
+
+  const watchlistByTicker = new Map(
+    WATCHLIST.map((entry) => [entry.ticker.toUpperCase(), entry]),
+  );
+
+  return tickers.map((rawTicker) => {
+    const ticker = rawTicker.trim().toUpperCase();
+    const fromWatchlist = watchlistByTicker.get(ticker);
+    if (fromWatchlist) {
+      return fromWatchlist;
+    }
+
+    return {
+      ticker,
+      name: ticker,
+      region: 'US',
+      exchange: 'UNKNOWN',
+      currency: 'USD',
+      sector: 'Unknown',
+      rationale: 'User-supplied ticker (not in default watchlist).',
+    };
+  });
+}

@@ -112,10 +112,23 @@ bun dev
 The deterministic signal engine runs a small US/CA watchlist, blends technical, fundamental, sentiment, and risk reviews, and emits explainable BUY/SELL/HOLD/COVER alerts. It is broker-neutral and prints structured JSON that can be audited later.
 
 ```bash
-bun run src/signal-engine/daily-scan.ts
+bun run scan:daily
+```
+
+Run for specific tickers:
+```bash
+bun run scan:daily --tickers AAPL,SHOP,TD
+```
+
+Include existing position context (enables deterministic `COVER` signals):
+```bash
+bun run scan:daily --tickers NVDA --position NVDA:short:120
 ```
 
 Add this command to a scheduler (cron, `croner`, etc.) for once-a-day execution during market hours.
+
+Core logic mapping (ai-hedge-fund + Dexter):
+`docs/core-logic-integration.md`
 
 ## 📊 How to Evaluate
 

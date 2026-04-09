@@ -1,24 +1,28 @@
 import { RiskAssessment } from '../risk/risk.js';
-import { SignalAction } from './models.js';
+import { PositionContext, SignalAction } from './models.js';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-export function resolveAction(score: number, risk: RiskAssessment): SignalAction {
+export function resolveAction(
+  score: number,
+  risk: RiskAssessment,
+  position: PositionContext,
+): SignalAction {
+  if (position.shortShares > 0 && (score > 0.15 || risk.riskScore < 0.25)) {
+    return 'COVER';
+  }
   if (score >= 0.5 && risk.riskScore > 0.35) {
     return 'BUY';
   }
-  if (score <= -0.5) {
+  if (score <= -0.45) {
     return 'SELL';
   }
-  if (score >= 0.25 && risk.riskScore > 0.2) {
-    return 'HOLD';
+  if (position.longShares > 0 && score < -0.25) {
+    return 'SELL';
   }
-  if (risk.riskScore < 0.2 && score > 0) {
-    return 'HOLD';
-  }
-  return score < -0.25 ? 'SELL' : 'HOLD';
+  return 'HOLD';
 }
 
 export function deriveConfidence(score: number, risk: RiskAssessment): number {

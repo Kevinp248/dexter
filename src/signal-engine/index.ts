@@ -1,11 +1,12 @@
-import { logger } from '../utils/logger.js';
-import { getDefaultWatchlist } from '../watchlists/watchlists.js';
-import { runTechnicalAnalysis } from '../agents/analysis/technical.js';
 import { runFundamentalAnalysis } from '../agents/analysis/fundamentals.js';
 import { runSentimentAnalysis } from '../agents/analysis/sentiment.js';
+import { runTechnicalAnalysis } from '../agents/analysis/technical.js';
+import { runValuationAnalysis } from '../agents/analysis/valuation.js';
 import { reviewRisk } from '../risk/risk.js';
-import { resolveAction, deriveConfidence } from './rules.js';
-import { SignalComponent, SignalPayload } from './models.js';
+import { logger } from '../utils/logger.js';
+import { getWatchlistForTickers } from '../watchlists/watchlists.js';
+import { deriveConfidence, resolveAction } from './rules.js';
+import { PositionContext, ScanOptions, SignalComponent, SignalPayload } from './models.js';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -20,104 +21,227 @@ async function safeRun<T>(fn: () => Promise<T>, fallback: T, label: string): Pro
   }
 }
 
-export async function runDailyScan(): Promise<{ generatedAt: string; alerts: SignalPayload[] }> {
+function correlation(a: number[], b: number[]): number | null {
+  const n = Math.min(a.length, b.length);
+  if (n < 10) return null;
+  const xs = a.slice(-n);
+  const ys = b.slice(-n);
+  const meanX = xs.reduce((sum, v) => sum + v, 0) / n;
+  const meanY = ys.reduce((sum, v) => sum + v, 0) / n;
+  let num = 0;
+  let denX = 0;
+  let denY = 0;
+  for (let i = 0; i < n; i += 1) {
+    const dx = xs[i] - meanX;
+    const dy = ys[i] - meanY;
+    num += dx * dy;
+    denX += dx * dx;
+    denY += dy * dy;
+  }
+  if (denX === 0 || denY === 0) return null;
+  return num / Math.sqrt(denX * denY);
+}
+
+function averageCorrelationForTicker(
+  ticker: string,
+  returnsByTicker: Record<string, number[]>,
+): number | null {
+  const base = returnsByTicker[ticker];
+  if (!base) return null;
+  const vals: number[] = [];
+  for (const [otherTicker, returns] of Object.entries(returnsByTicker)) {
+    if (otherTicker === ticker) continue;
+    const corr = correlation(base, returns);
+    if (corr !== null) vals.push(corr);
+  }
+  if (!vals.length) return null;
+  return vals.reduce((sum, value) => sum + value, 0) / vals.length;
+}
+
+function getPositionContext(
+  ticker: string,
+  positions?: Record<string, PositionContext>,
+): PositionContext {
+  return positions?.[ticker] ?? { longShares: 0, shortShares: 0 };
+}
+
+type InterimAnalysis = {
+  ticker: string;
+  technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>;
+  fundamental: Awaited<ReturnType<typeof runFundamentalAnalysis>>;
+  sentiment: Awaited<ReturnType<typeof runSentimentAnalysis>>;
+  valuation: Awaited<ReturnType<typeof runValuationAnalysis>>;
+};
+
+export async function runDailyScan(
+  options: ScanOptions = {},
+): Promise<{ generatedAt: string; alerts: SignalPayload[] }> {
   const generatedAt = new Date().toISOString();
-  const watchlist = getDefaultWatchlist();
-  const alerts: SignalPayload[] = [];
+  const watchlist = getWatchlistForTickers(options.tickers);
+  const interim: InterimAnalysis[] = [];
 
   for (const entry of watchlist) {
-    const technical = await safeRun(
-      () => runTechnicalAnalysis(entry.ticker),
-      {
-        ticker: entry.ticker,
-        score: 0,
-        shortMA: 0,
-        longMA: 0,
-        momentum: 0,
-        volatility: 0,
-        bars: [],
-        summary: 'Technical data unavailable',
-      },
-      'technical',
-    );
+    const [technical, fundamental, sentiment, valuation] = await Promise.all([
+      safeRun(
+        () => runTechnicalAnalysis(entry.ticker),
+        {
+          ticker: entry.ticker,
+          score: 0,
+          confidence: 0,
+          signal: 'neutral' as const,
+          volatility: 0.3,
+          bars: [],
+          returns: [],
+          summary: 'Technical data unavailable',
+          subSignals: {
+            trend: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
+            meanReversion: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
+            momentum: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
+            volatility: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
+            statArb: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
+          },
+        },
+        'technical',
+      ),
+      safeRun(
+        () => runFundamentalAnalysis(entry.ticker),
+        {
+          ticker: entry.ticker,
+          score: 0,
+          confidence: 0,
+          signal: 'neutral' as const,
+          metrics: {},
+          summary: 'Fundamental data unavailable',
+          pillars: {
+            profitability: { signal: 'neutral' as const, score: 0, details: '' },
+            growth: { signal: 'neutral' as const, score: 0, details: '' },
+            health: { signal: 'neutral' as const, score: 0, details: '' },
+            valuationRatios: { signal: 'neutral' as const, score: 0, details: '' },
+          },
+        },
+        'fundamental',
+      ),
+      safeRun(
+        () => runSentimentAnalysis(entry.ticker),
+        {
+          ticker: entry.ticker,
+          score: 0,
+          summary: 'Sentiment data unavailable',
+          positive: 0,
+          negative: 0,
+        },
+        'sentiment',
+      ),
+      safeRun(
+        () => runValuationAnalysis(entry.ticker),
+        {
+          ticker: entry.ticker,
+          score: 0,
+          confidence: 0,
+          signal: 'neutral' as const,
+          marketCap: 0,
+          weightedGap: 0,
+          methods: {
+            dcf: { value: 0, gap: 0, signal: 'neutral' as const, details: 'Unavailable' },
+            ownerEarnings: { value: 0, gap: 0, signal: 'neutral' as const, details: 'Unavailable' },
+            multiples: { value: 0, gap: 0, signal: 'neutral' as const, details: 'Unavailable' },
+            residualIncome: { value: 0, gap: 0, signal: 'neutral' as const, details: 'Unavailable' },
+          },
+          summary: 'Valuation data unavailable',
+        },
+        'valuation',
+      ),
+    ]);
 
-    const fundamental = await safeRun(
-      () => runFundamentalAnalysis(entry.ticker),
-      {
-        ticker: entry.ticker,
-        score: 0,
-        metrics: {},
-        summary: 'Fundamental data unavailable',
-      },
-      'fundamental',
-    );
+    interim.push({ ticker: entry.ticker, technical, fundamental, sentiment, valuation });
+  }
 
-    const sentiment = await safeRun(
-      () => runSentimentAnalysis(entry.ticker),
-      {
-        ticker: entry.ticker,
-        score: 0,
-        summary: 'Sentiment data unavailable',
-        positive: 0,
-        negative: 0,
-      },
-      'sentiment',
-    );
+  const returnsByTicker = Object.fromEntries(
+    interim.map((item) => [item.ticker, item.technical.returns]),
+  );
 
+  const alerts: SignalPayload[] = [];
+  for (const item of interim) {
+    const entry = watchlist.find((candidate) => candidate.ticker === item.ticker);
+    if (!entry) continue;
+
+    const avgCorr = averageCorrelationForTicker(item.ticker, returnsByTicker);
+    const risk = reviewRisk(item.technical, item.fundamental, avgCorr);
+    const weightedInputs = {
+      technical: item.technical.score * 0.3,
+      fundamentals: item.fundamental.score * 0.25,
+      valuation: item.valuation.score * 0.3,
+      sentiment: item.sentiment.score * 0.15,
+    };
     const aggregateScore = clamp(
-      technical.score * 0.4 + fundamental.score * 0.4 + sentiment.score * 0.2,
+      weightedInputs.technical +
+        weightedInputs.fundamentals +
+        weightedInputs.valuation +
+        weightedInputs.sentiment,
       -1,
       1,
     );
-
-    const risk = reviewRisk(technical, fundamental);
-    const action = resolveAction(aggregateScore, risk);
+    const positionContext = getPositionContext(item.ticker, options.positions);
+    const action = resolveAction(aggregateScore, risk, positionContext);
     const confidence = deriveConfidence(aggregateScore, risk);
 
     const components: SignalComponent[] = [
       {
         name: 'Technical',
-        score: technical.score,
+        score: item.technical.score,
         details: {
-          summary: technical.summary,
-          shortMA: technical.shortMA,
-          longMA: technical.longMA,
-          momentum: technical.momentum,
+          signal: item.technical.signal,
+          summary: item.technical.summary,
+          subSignals: item.technical.subSignals,
         },
       },
       {
-        name: 'Fundamental',
-        score: fundamental.score,
+        name: 'Fundamentals',
+        score: item.fundamental.score,
         details: {
-          summary: fundamental.summary,
-          metrics: fundamental.metrics,
+          signal: item.fundamental.signal,
+          summary: item.fundamental.summary,
+          pillars: item.fundamental.pillars,
+          metrics: item.fundamental.metrics,
+        },
+      },
+      {
+        name: 'Valuation',
+        score: item.valuation.score,
+        details: {
+          signal: item.valuation.signal,
+          summary: item.valuation.summary,
+          weightedGap: item.valuation.weightedGap,
+          methods: item.valuation.methods,
         },
       },
       {
         name: 'Sentiment',
-        score: sentiment.score,
+        score: item.sentiment.score,
         details: {
-          summary: sentiment.summary,
-          positive: sentiment.positive,
-          negative: sentiment.negative,
+          summary: item.sentiment.summary,
+          positive: item.sentiment.positive,
+          negative: item.sentiment.negative,
         },
       },
     ];
 
     const payload: SignalPayload = {
-      ticker: entry.ticker,
+      ticker: item.ticker,
       action,
       confidence,
+      positionContext,
       reasoning: {
         components,
         risk,
         aggregateScore,
+        weightedInputs,
       },
       watchlist: entry,
       generatedAt,
     };
 
-    logger.info(`Generated signal for ${entry.ticker}`, payload);
+    logger.info(`Generated signal for ${item.ticker}`, payload);
     alerts.push(payload);
   }
 

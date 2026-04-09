@@ -66,6 +66,34 @@ export async function fetchKeyRatios(ticker: string): Promise<Record<string, unk
   }, {}, 'fetchKeyRatios');
 }
 
+export async function fetchCashFlowStatements(
+  ticker: string,
+  limit = 8,
+): Promise<Array<Record<string, unknown>>> {
+  return safeApi(async () => {
+    const { data } = await api.get('/financials/cash-flow-statements/', {
+      ticker: ticker.toUpperCase(),
+      period: 'ttm',
+      limit,
+    });
+    return (data.cash_flow_statements as Array<Record<string, unknown>>) ?? [];
+  }, [], 'fetchCashFlowStatements');
+}
+
+export async function fetchIncomeStatements(
+  ticker: string,
+  limit = 8,
+): Promise<Array<Record<string, unknown>>> {
+  return safeApi(async () => {
+    const { data } = await api.get('/financials/income-statements/', {
+      ticker: ticker.toUpperCase(),
+      period: 'ttm',
+      limit,
+    });
+    return (data.income_statements as Array<Record<string, unknown>>) ?? [];
+  }, [], 'fetchIncomeStatements');
+}
+
 export async function fetchCompanyNews(
   ticker: string,
   limit = 5,
