@@ -125,6 +125,17 @@ Include existing position context (enables deterministic `COVER` signals):
 bun run scan:daily --tickers NVDA --position NVDA:short:120
 ```
 
+Execution realism and portfolio guardrails:
+```bash
+bun run scan:daily \
+  --tickers AAPL,MSFT \
+  --portfolio-value 150000 \
+  --gross-exposure 0.78 \
+  --max-gross 1.00 \
+  --sector-exposure Technology:0.25,Financials:0.10 \
+  --max-sector 0.35
+```
+
 Add this command to a scheduler (cron, `croner`, etc.) for once-a-day execution during market hours.
 
 Core logic mapping (ai-hedge-fund + Dexter):

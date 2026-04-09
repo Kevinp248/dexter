@@ -5,8 +5,19 @@ import { runValuationAnalysis } from '../agents/analysis/valuation.js';
 import { reviewRisk } from '../risk/risk.js';
 import { logger } from '../utils/logger.js';
 import { getWatchlistForTickers } from '../watchlists/watchlists.js';
+import {
+  estimateExecutionCosts,
+  estimateTargetNotionalUsd,
+} from './execution.js';
+import { evaluatePortfolioConstraints } from './portfolio-constraints.js';
 import { deriveConfidence, resolveAction } from './rules.js';
-import { PositionContext, ScanOptions, SignalComponent, SignalPayload } from './models.js';
+import {
+  ExecutionPlan,
+  PositionContext,
+  ScanOptions,
+  SignalComponent,
+  SignalPayload,
+} from './models.js';
 
 export interface ScanProviders {
   runTechnicalAnalysis: typeof runTechnicalAnalysis;
@@ -79,6 +90,14 @@ function getPositionContext(
   return positions?.[ticker] ?? { longShares: 0, shortShares: 0 };
 }
 
+function estimatePriceFromTechnical(
+  technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>,
+): number {
+  const latest = technical.bars[technical.bars.length - 1];
+  if (latest && Number.isFinite(latest.close) && latest.close > 0) return latest.close;
+  return 100;
+}
+
 type InterimAnalysis = {
   ticker: string;
   technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>;
@@ -93,6 +112,7 @@ export async function runDailyScan(
 ): Promise<{ generatedAt: string; alerts: SignalPayload[] }> {
   const generatedAt = new Date().toISOString();
   const watchlist = getWatchlistForTickers(options.tickers);
+  const portfolioValue = options.portfolioValue ?? 100_000;
   const interim: InterimAnalysis[] = [];
 
   for (const entry of watchlist) {
@@ -199,6 +219,45 @@ export async function runDailyScan(
     const positionContext = getPositionContext(item.ticker, options.positions);
     const action = resolveAction(aggregateScore, risk, positionContext);
     const confidence = deriveConfidence(aggregateScore, risk);
+    const estimatedPrice = estimatePriceFromTechnical(item.technical);
+    const targetNotional = estimateTargetNotionalUsd(
+      action,
+      risk,
+      portfolioValue,
+      confidence,
+      positionContext,
+    );
+    let estimatedShares = Math.floor(targetNotional / estimatedPrice);
+    if (action === 'SELL') estimatedShares = positionContext.longShares;
+    if (action === 'COVER') estimatedShares = positionContext.shortShares;
+    const notionalUsd = estimatedShares * estimatedPrice;
+    const costEstimate = estimateExecutionCosts({
+      action,
+      watchlist: entry,
+      position: positionContext,
+      confidence,
+      aggregateScore,
+      notionalUsd,
+    });
+    const constraints = evaluatePortfolioConstraints({
+      action,
+      watchlist: entry,
+      notionalUsd,
+      portfolioValue,
+      options,
+    });
+    const shouldDowngradeToHold =
+      action !== 'HOLD' &&
+      estimatedShares > 0 &&
+      (!costEstimate.isTradeableAfterCosts || !constraints.isAllowed);
+    const finalAction = shouldDowngradeToHold ? 'HOLD' : action;
+    const executionPlan: ExecutionPlan = {
+      estimatedPrice,
+      estimatedShares,
+      notionalUsd,
+      costEstimate,
+      constraints,
+    };
 
     const components: SignalComponent[] = [
       {
@@ -245,7 +304,9 @@ export async function runDailyScan(
       ticker: item.ticker,
       action,
       confidence,
+      finalAction,
       positionContext,
+      executionPlan,
       reasoning: {
         components,
         risk,

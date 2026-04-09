@@ -86,6 +86,7 @@ describe('runDailyScan deterministic integration', () => {
     );
     expect(scan.alerts).toHaveLength(1);
     expect(scan.alerts[0].action).toBe('BUY');
+    expect(scan.alerts[0].finalAction).toBe('BUY');
   });
 
   test('golden scenario: strong bearish stack -> SELL', async () => {
@@ -95,6 +96,7 @@ describe('runDailyScan deterministic integration', () => {
     );
     expect(scan.alerts).toHaveLength(1);
     expect(scan.alerts[0].action).toBe('SELL');
+    expect(scan.alerts[0].finalAction).toBe('SELL');
   });
 
   test('golden scenario: mixed/conflicted signals -> HOLD', async () => {
@@ -104,6 +106,7 @@ describe('runDailyScan deterministic integration', () => {
     );
     expect(scan.alerts).toHaveLength(1);
     expect(scan.alerts[0].action).toBe('HOLD');
+    expect(scan.alerts[0].finalAction).toBe('HOLD');
   });
 
   test('golden scenario: short position and thesis flip -> COVER', async () => {
@@ -113,5 +116,24 @@ describe('runDailyScan deterministic integration', () => {
     );
     expect(scan.alerts).toHaveLength(1);
     expect(scan.alerts[0].action).toBe('COVER');
+    expect(scan.alerts[0].finalAction).toBe('COVER');
+  });
+
+  test('portfolio cap breach downgrades BUY to HOLD', async () => {
+    const scan = await runDailyScan(
+      {
+        tickers: ['AAPL'],
+        portfolioValue: 100_000,
+        portfolioContext: {
+          grossExposurePct: 0.98,
+          maxGrossExposurePct: 1.0,
+        },
+      },
+      makeProviders(0.95, 0.9, 0.9, 0.6, 0.14),
+    );
+    expect(scan.alerts).toHaveLength(1);
+    expect(scan.alerts[0].action).toBe('BUY');
+    expect(scan.alerts[0].finalAction).toBe('HOLD');
+    expect(scan.alerts[0].executionPlan.constraints.isAllowed).toBe(false);
   });
 });

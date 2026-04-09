@@ -16,7 +16,7 @@ Branch: `feature-kevin-dexter`
 
 ## Current Phase
 
-`Phase 2A` - Deterministic validation harness and golden scenarios (in execution)
+`Phase 3A` - Execution realism and portfolio guardrails
 
 ## Phase Plan (Ordered)
 
@@ -50,18 +50,26 @@ Branch: `feature-kevin-dexter`
 - [ ] Add Canadian ticker/data nuance checks.
 - [ ] Add runbook for manual-trade workflow and review checklist.
 
+### Phase 3A - Execution realism (In Progress)
+- [x] Add transaction cost model (spread + slippage + fees + borrow proxy).
+- [x] Add portfolio guardrails (gross exposure + sector exposure caps).
+- [x] Add alert-level execution plan fields (shares, notional, cost-adjusted edge).
+- [x] Add action downgrade to `HOLD` when costs/constraints invalidate trade.
+- [ ] Add regression test for cost-based downgrade behavior.
+
 ## Completed Steps
 
 1. Merged core deterministic architecture into Dexter.
 2. Ported core technical/fundamental/valuation/risk logic patterns from `ai-hedge-fund`.
 3. Added auditable component-level reasoning in output payload.
 4. Added unit tests for deterministic action rules (`BUY/SELL/HOLD/COVER`).
+5. Added execution-cost realism + portfolio-level exposure guardrails.
 
 ## Next Steps (Ordered)
 
 1. Add snapshot-style fixture test for full JSON output shape from `runDailyScan`.
-2. Add one regression case covering multi-ticker correlation adjustment in risk scoring.
-3. Run `npm run test:signals` and record stable baseline outputs in docs.
+2. Add multi-ticker correlation regression case in risk scoring.
+3. Add cost-model regression case that downgrades trade to `HOLD`.
 4. Begin Phase 2B config externalization (weights/thresholds file).
 
 ## Work Log
@@ -75,3 +83,9 @@ Branch: `feature-kevin-dexter`
   - Added 4 deterministic golden scenario tests (`BUY/SELL/HOLD/COVER`).
   - Added `npm run test:signals` and README validation command.
   - Validation status: `typecheck` pass, `npx jest` pass, `npm run test:signals` pass (2 suites, 9 tests).
+- 2026-04-09:
+  - Added transaction-cost model and portfolio-constraint engine to signal output.
+  - Added execution plan fields and final action downgrade logic (`action` vs `finalAction`).
+  - Added integration test for gross-exposure cap forcing `BUY` -> `HOLD`.
+  - Added CLI flags for portfolio context (`--portfolio-value`, `--gross-exposure`, `--max-gross`, `--sector-exposure`, `--max-sector`).
+  - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 10 tests).

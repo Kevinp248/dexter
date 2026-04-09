@@ -35,6 +35,61 @@ function parseArgs(argv: string[]): ScanOptions {
       i += 1;
       continue;
     }
+
+    if (arg === '--portfolio-value' && argv[i + 1]) {
+      const value = Number(argv[i + 1]);
+      if (Number.isFinite(value) && value > 0) options.portfolioValue = value;
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--gross-exposure' && argv[i + 1]) {
+      const value = Number(argv[i + 1]);
+      if (Number.isFinite(value) && value >= 0) {
+        options.portfolioContext = options.portfolioContext ?? {};
+        options.portfolioContext.grossExposurePct = value;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--max-gross' && argv[i + 1]) {
+      const value = Number(argv[i + 1]);
+      if (Number.isFinite(value) && value > 0) {
+        options.portfolioContext = options.portfolioContext ?? {};
+        options.portfolioContext.maxGrossExposurePct = value;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--max-sector' && argv[i + 1]) {
+      const value = Number(argv[i + 1]);
+      if (Number.isFinite(value) && value > 0) {
+        options.portfolioContext = options.portfolioContext ?? {};
+        options.portfolioContext.maxSectorExposurePct = value;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--sector-exposure' && argv[i + 1]) {
+      const pairs = argv[i + 1].split(',').map((token) => token.trim()).filter(Boolean);
+      const map: Record<string, number> = {};
+      for (const pair of pairs) {
+        const [sector, exposureRaw] = pair.split(':');
+        const exposure = Number(exposureRaw);
+        if (sector && Number.isFinite(exposure) && exposure >= 0) {
+          map[sector] = exposure;
+        }
+      }
+      if (Object.keys(map).length > 0) {
+        options.portfolioContext = options.portfolioContext ?? {};
+        options.portfolioContext.sectorExposurePct = map;
+      }
+      i += 1;
+      continue;
+    }
   }
 
   if (options.positions && Object.keys(options.positions).length === 0) {
