@@ -164,9 +164,17 @@ Add this command to a scheduler (cron, `croner`, etc.) for once-a-day execution 
 Core logic mapping (ai-hedge-fund + Dexter):
 `docs/core-logic-integration.md`
 
+Walk-forward validation design notes:
+`docs/walk-forward-validation.md`
+
 Deterministic signal validation (works even if Bun is unavailable in your shell):
 ```bash
 npm run test:signals
+```
+
+Focused walk-forward split policy check:
+```bash
+npm run test:walkforward
 ```
 
 Versioned strategy parameters:

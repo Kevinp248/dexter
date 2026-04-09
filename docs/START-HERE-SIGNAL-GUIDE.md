@@ -39,7 +39,13 @@ npm run test:signals
 
 Pass criteria:
 - Typecheck passes.
-- Signal tests pass (golden scenarios + snapshot).
+- Signal tests pass (golden scenarios + snapshot + walk-forward split policy checks).
+
+Optional focused check for only walk-forward split logic:
+
+```bash
+npm run test:walkforward
+```
 
 If either fails, do not trust fresh signals until fixed.
 
@@ -136,5 +142,7 @@ When editing `src/signal-engine/config.ts`:
   - `docs/parameter-changelog.md`
 - Progress tracker:
   - `docs/implementation-tracker.md`
+- Walk-forward validation design:
+  - `docs/walk-forward-validation.md`
 - Paper trade log template:
   - `docs/paper-trade-log-template.md`

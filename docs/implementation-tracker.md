@@ -56,6 +56,7 @@ Branch: `feature-kevin-dexter`
 - [x] Add alert-level execution plan fields (shares, notional, cost-adjusted edge).
 - [x] Add action downgrade to `HOLD` when costs/constraints invalidate trade.
 - [x] Add regression test for cost-based downgrade behavior.
+- [x] Start walk-forward validation design (purged/embargo style split policy).
 
 ## Completed Steps
 
@@ -64,13 +65,14 @@ Branch: `feature-kevin-dexter`
 3. Added auditable component-level reasoning in output payload.
 4. Added unit tests for deterministic action rules (`BUY/SELL/HOLD/COVER`).
 5. Added execution-cost realism + portfolio-level exposure guardrails.
+6. Added walk-forward split policy utilities with purged/embargo-aware fold generation + validation tests.
 
 ## Next Steps (Ordered)
 
-1. Start walk-forward validation design (purged/embargo style split policy).
-2. Add weekly performance review script/checklist tied to paper-trade log.
-3. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
-4. Add CSV export for daily signals + fallback diagnostics.
+1. Add weekly performance review script/checklist tied to paper-trade log.
+2. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
+3. Add CSV export for daily signals + fallback diagnostics.
+4. Add a simple CLI/report wrapper that prints walk-forward folds for a date range.
 
 ## Work Log
 
@@ -122,3 +124,7 @@ Branch: `feature-kevin-dexter`
   - Added regression test verifying fallback reason and retry guidance when component fails.
   - Updated operator docs to require fallback review before acting.
   - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 16 tests, 1 snapshot).
+- 2026-04-09:
+  - Added walk-forward validation design utilities (`buildPurgedWalkForwardFolds`, `validatePurgedWalkForwardFolds`).
+  - Added deterministic split tests (purge/embargo spacing, max folds, invalid config guardrails).
+  - Added `npm run test:walkforward` and included walk-forward tests in `npm run test:signals`.
