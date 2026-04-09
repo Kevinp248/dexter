@@ -148,6 +148,13 @@ Delta explainability:
 - Each alert now includes `delta` fields showing what changed vs previous scan.
 - Scanner stores the latest run at `.dexter/signal-engine/last-scan.json` and compares next run against it.
 
+Retry/fallback diagnostics:
+- Each alert includes `fallbackPolicy` with:
+  - failing component(s)
+  - fallback reason
+  - retry recommendation
+- Use these before trusting a degraded signal.
+
 Canadian market nuance checks:
 - CA tickers now run exchange + liquidity checks.
 - If checks fail, `finalAction` is downgraded to `HOLD` and details appear in `regionalMarketCheck`.

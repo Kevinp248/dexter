@@ -9,6 +9,15 @@ export interface SignalComponent<T = Record<string, unknown>> {
   details: T;
 }
 
+export interface FallbackEvent {
+  component: string;
+  fallbackUsed: boolean;
+  reason: string;
+  retrySuggestion: string;
+  attempts: number;
+  lastError: string | null;
+}
+
 export interface PositionContext {
   longShares: number;
   shortShares: number;
@@ -90,6 +99,10 @@ export interface SignalPayload {
   regionalMarketCheck: RegionalMarketCheck;
   positionContext: PositionContext;
   executionPlan: ExecutionPlan;
+  fallbackPolicy: {
+    hadFallback: boolean;
+    events: FallbackEvent[];
+  };
   reasoning: {
     components: SignalComponent[];
     risk: RiskAssessment;

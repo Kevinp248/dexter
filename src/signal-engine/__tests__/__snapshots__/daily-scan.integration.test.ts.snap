@@ -37,6 +37,43 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
         "estimatedShares": 0,
         "notionalUsd": 0,
       },
+      "fallbackPolicy": {
+        "events": [
+          {
+            "attempts": 1,
+            "component": "technical",
+            "fallbackUsed": false,
+            "lastError": null,
+            "reason": "Component succeeded",
+            "retrySuggestion": "No retry needed",
+          },
+          {
+            "attempts": 1,
+            "component": "fundamental",
+            "fallbackUsed": false,
+            "lastError": null,
+            "reason": "Component succeeded",
+            "retrySuggestion": "No retry needed",
+          },
+          {
+            "attempts": 1,
+            "component": "sentiment",
+            "fallbackUsed": false,
+            "lastError": null,
+            "reason": "Component succeeded",
+            "retrySuggestion": "No retry needed",
+          },
+          {
+            "attempts": 1,
+            "component": "valuation",
+            "fallbackUsed": false,
+            "lastError": null,
+            "reason": "Component succeeded",
+            "retrySuggestion": "No retry needed",
+          },
+        ],
+        "hadFallback": false,
+      },
       "finalAction": "HOLD",
       "generatedAt": "2026-01-02T00:00:00.000Z",
       "positionContext": {

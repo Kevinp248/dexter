@@ -46,7 +46,7 @@ Branch: `feature-kevin-dexter`
 
 ### Phase 3 - Operational hardening (Planned)
 - [x] Add daily scheduler instructions/playbook.
-- [ ] Add retry/fallback policy for unavailable data sources.
+- [x] Add retry/fallback policy for unavailable data sources.
 - [x] Add Canadian ticker/data nuance checks.
 - [x] Add runbook for manual-trade workflow and review checklist.
 
@@ -67,10 +67,10 @@ Branch: `feature-kevin-dexter`
 
 ## Next Steps (Ordered)
 
-1. Add retry/fallback policy for unavailable data sources.
-2. Start walk-forward validation design (purged/embargo style split policy).
-3. Add weekly performance review script/checklist tied to paper-trade log.
-4. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
+1. Start walk-forward validation design (purged/embargo style split policy).
+2. Add weekly performance review script/checklist tied to paper-trade log.
+3. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
+4. Add CSV export for daily signals + fallback diagnostics.
 
 ## Work Log
 
@@ -116,3 +116,9 @@ Branch: `feature-kevin-dexter`
   - Added `regionalMarketCheck` to payload and regression coverage for CA low-liquidity case.
   - Updated snapshot baseline and operator docs with CA-specific review guidance.
   - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 15 tests, 1 snapshot).
+- 2026-04-09:
+  - Added retry-with-backoff policy for core components (3 attempts before fallback).
+  - Added `fallbackPolicy` payload section with reason + retry suggestion.
+  - Added regression test verifying fallback reason and retry guidance when component fails.
+  - Updated operator docs to require fallback review before acting.
+  - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 16 tests, 1 snapshot).

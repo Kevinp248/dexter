@@ -243,4 +243,27 @@ describe('runDailyScan deterministic integration', () => {
     expect(delta.aggregateScoreChange).toBeGreaterThan(0);
     expect(delta.topDrivers.length).toBeGreaterThan(0);
   });
+
+  test('fallback policy reports reason and retry guidance when a component fails', async () => {
+    jest.useRealTimers();
+    const base = makeProviders(0.4, 0.3, 0.35, 0.2, 0.2);
+    const failingProviders: ScanProviders = {
+      ...base,
+      async runFundamentalAnalysis() {
+        throw new Error('simulated fundamentals API timeout');
+      },
+    };
+
+    const scan = await runDailyScan({ tickers: ['AAPL'] }, failingProviders);
+    expect(scan.alerts).toHaveLength(1);
+    expect(scan.alerts[0].fallbackPolicy.hadFallback).toBe(true);
+    const fundamentalEvent = scan.alerts[0].fallbackPolicy.events.find(
+      (event) => event.component === 'fundamental',
+    );
+    expect(fundamentalEvent?.fallbackUsed).toBe(true);
+    expect(fundamentalEvent?.reason).toContain('failed after');
+    expect(fundamentalEvent?.retrySuggestion).toContain('Retry');
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-02T00:00:00.000Z'));
+  });
 });

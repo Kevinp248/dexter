@@ -14,6 +14,7 @@ import { evaluatePortfolioConstraints } from './portfolio-constraints.js';
 import { deriveConfidence, resolveAction } from './rules.js';
 import {
   ExecutionPlan,
+  FallbackEvent,
   PreviousSignalSnapshot,
   PositionContext,
   RegionalMarketCheck,
@@ -42,13 +43,56 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-async function safeRun<T>(fn: () => Promise<T>, fallback: T, label: string): Promise<T> {
-  try {
-    return await fn();
-  } catch (error) {
-    logger.warn(`Signal component ${label} failed: ${error}`);
-    return fallback;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runWithRetryAndFallback<T>(
+  fn: () => Promise<T>,
+  fallback: T,
+  label: string,
+  retrySuggestion: string,
+): Promise<{ value: T; event: FallbackEvent }> {
+  const maxAttempts = 3;
+  const baseDelayMs = 250;
+  let attempts = 0;
+  let lastError: string | null = null;
+
+  while (attempts < maxAttempts) {
+    attempts += 1;
+    try {
+      const value = await fn();
+      return {
+        value,
+        event: {
+          component: label,
+          fallbackUsed: false,
+          reason: 'Component succeeded',
+          retrySuggestion: 'No retry needed',
+          attempts,
+          lastError: null,
+        },
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      logger.warn(`Signal component ${label} attempt ${attempts} failed: ${lastError}`);
+      if (attempts < maxAttempts) {
+        await sleep(baseDelayMs * attempts);
+      }
+    }
   }
+
+  return {
+    value: fallback,
+    event: {
+      component: label,
+      fallbackUsed: true,
+      reason: `${label} failed after ${maxAttempts} attempts`,
+      retrySuggestion,
+      attempts: maxAttempts,
+      lastError,
+    },
+  };
 }
 
 function correlation(a: number[], b: number[]): number | null {
@@ -153,7 +197,55 @@ type InterimAnalysis = {
   fundamental: Awaited<ReturnType<typeof runFundamentalAnalysis>>;
   sentiment: Awaited<ReturnType<typeof runSentimentAnalysis>>;
   valuation: Awaited<ReturnType<typeof runValuationAnalysis>>;
+  fallbackEvents: FallbackEvent[];
 };
+
+function detectDataFallbacks(
+  ticker: string,
+  technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>,
+  fundamental: Awaited<ReturnType<typeof runFundamentalAnalysis>>,
+  valuation: Awaited<ReturnType<typeof runValuationAnalysis>>,
+): FallbackEvent[] {
+  const events: FallbackEvent[] = [];
+  if (technical.bars.length < 20) {
+    events.push({
+      component: 'technical',
+      fallbackUsed: true,
+      reason: `Insufficient price history for ${ticker} (${technical.bars.length} bars)`,
+      retrySuggestion:
+        'Retry after market close, confirm ticker/exchange mapping, and verify price API coverage.',
+      attempts: 0,
+      lastError: null,
+    });
+  }
+
+  const metricsPresent = Object.values(fundamental.metrics).some((value) => value !== undefined);
+  if (!metricsPresent) {
+    events.push({
+      component: 'fundamental',
+      fallbackUsed: true,
+      reason: `No fundamental metrics returned for ${ticker}`,
+      retrySuggestion:
+        'Retry with valid FINANCIAL_DATASETS_API_KEY and verify the issuer reports on supported endpoints.',
+      attempts: 0,
+      lastError: null,
+    });
+  }
+
+  if (!valuation.marketCap || valuation.marketCap <= 0) {
+    events.push({
+      component: 'valuation',
+      fallbackUsed: true,
+      reason: `Valuation inputs incomplete for ${ticker} (missing market cap/financial statements)`,
+      retrySuggestion:
+        'Retry later and verify market-cap + financial statement endpoints for this ticker.',
+      attempts: 0,
+      lastError: null,
+    });
+  }
+
+  return events;
+}
 
 export async function runDailyScan(
   options: ScanOptions = {},
@@ -165,8 +257,9 @@ export async function runDailyScan(
   const interim: InterimAnalysis[] = [];
 
   for (const entry of watchlist) {
-    const [technical, fundamental, sentiment, valuation] = await Promise.all([
-      safeRun(
+    const [technicalResult, fundamentalResult, sentimentResult, valuationResult] =
+      await Promise.all([
+        runWithRetryAndFallback(
         () => providers.runTechnicalAnalysis(entry.ticker),
         {
           ticker: entry.ticker,
@@ -186,8 +279,9 @@ export async function runDailyScan(
           },
         },
         'technical',
+        'Retry in 5-10 minutes. If still failing, validate historical price endpoint and symbol format.',
       ),
-      safeRun(
+        runWithRetryAndFallback(
         () => providers.runFundamentalAnalysis(entry.ticker),
         {
           ticker: entry.ticker,
@@ -204,8 +298,9 @@ export async function runDailyScan(
           },
         },
         'fundamental',
+        'Retry after data provider refresh; verify financial-metrics snapshot availability for the ticker.',
       ),
-      safeRun(
+        runWithRetryAndFallback(
         () => providers.runSentimentAnalysis(entry.ticker),
         {
           ticker: entry.ticker,
@@ -215,8 +310,9 @@ export async function runDailyScan(
           negative: 0,
         },
         'sentiment',
+        'Retry after 15 minutes; if still empty, treat sentiment as low-priority and use other components.',
       ),
-      safeRun(
+        runWithRetryAndFallback(
         () => providers.runValuationAnalysis(entry.ticker),
         {
           ticker: entry.ticker,
@@ -234,10 +330,30 @@ export async function runDailyScan(
           summary: 'Valuation data unavailable',
         },
         'valuation',
+        'Retry with fresh financial statements; confirm market cap and cash-flow endpoints respond for this symbol.',
       ),
-    ]);
+      ]);
 
-    interim.push({ ticker: entry.ticker, technical, fundamental, sentiment, valuation });
+    const technical = technicalResult.value;
+    const fundamental = fundamentalResult.value;
+    const sentiment = sentimentResult.value;
+    const valuation = valuationResult.value;
+    const fallbackEvents = [
+      technicalResult.event,
+      fundamentalResult.event,
+      sentimentResult.event,
+      valuationResult.event,
+      ...detectDataFallbacks(entry.ticker, technical, fundamental, valuation),
+    ];
+
+    interim.push({
+      ticker: entry.ticker,
+      technical,
+      fundamental,
+      sentiment,
+      valuation,
+      fallbackEvents,
+    });
   }
 
   const returnsByTicker = Object.fromEntries(
@@ -374,6 +490,10 @@ export async function runDailyScan(
       regionalMarketCheck,
       positionContext,
       executionPlan,
+      fallbackPolicy: {
+        hadFallback: item.fallbackEvents.some((event) => event.fallbackUsed),
+        events: item.fallbackEvents,
+      },
       reasoning: {
         components,
         risk,
