@@ -164,7 +164,7 @@ async function main() {
       parsed.appendCsvPath || undefined,
     );
     logger.info(
-      `Appended ${appendResult.rowsAppended} row(s) to paper trade CSV at ${appendResult.path}`,
+      `Paper trade CSV update: appended ${appendResult.rowsAppended}, skipped ${appendResult.rowsSkipped} duplicate day/ticker row(s) at ${appendResult.path}`,
     );
   }
   console.log(JSON.stringify(scan, null, 2));

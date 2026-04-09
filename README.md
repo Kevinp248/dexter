@@ -198,6 +198,8 @@ Auto-append scan output rows to paper-trade CSV:
 bun run scan:daily:log --tickers AAPL
 ```
 
+This auto-log mode dedupes repeated same-day rows for the same ticker.
+
 Record real/paper fills to persistent ledger:
 ```bash
 bun run trade:ledger record --ticker AAPL --side BUY --qty 10 --price 200 --fee 1

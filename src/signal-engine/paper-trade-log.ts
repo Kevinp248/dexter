@@ -69,6 +69,55 @@ async function ensureHeader(logPath: string): Promise<void> {
   await writeFile(logPath, `${PAPER_TRADE_HEADERS.join(',')}\n`, 'utf8');
 }
 
+function splitCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char === ',' && !inQuotes) {
+      values.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  values.push(current.trim());
+  return values;
+}
+
+async function loadExistingDateTickerKeys(logPath: string): Promise<Set<string>> {
+  try {
+    const raw = await readFile(logPath, 'utf8');
+    const lines = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    if (lines.length <= 1) return new Set();
+
+    const keys = new Set<string>();
+    for (const line of lines.slice(1)) {
+      const cols = splitCsvLine(line);
+      const date = cols[0]?.trim();
+      const ticker = cols[1]?.trim().toUpperCase();
+      if (date && ticker) keys.add(`${date}::${ticker}`);
+    }
+    return keys;
+  } catch {
+    return new Set();
+  }
+}
+
 function alertToCsvRow(alert: SignalPayload): string {
   const fallbackEvents = alert.fallbackPolicy.events.filter((event) => event.fallbackUsed);
   const fallbackReason =
@@ -116,12 +165,28 @@ function alertToCsvRow(alert: SignalPayload): string {
 export async function appendScanAlertsToPaperTradeLog(
   scan: ScanOutput,
   logPath = defaultPaperTradeLogPath(),
-): Promise<{ path: string; rowsAppended: number }> {
+): Promise<{ path: string; rowsAppended: number; rowsSkipped: number }> {
   await ensureHeader(logPath);
-  if (!scan.alerts.length) return { path: logPath, rowsAppended: 0 };
+  if (!scan.alerts.length) return { path: logPath, rowsAppended: 0, rowsSkipped: 0 };
 
-  const lines = scan.alerts.map(alertToCsvRow).join('\n');
-  await appendFile(logPath, `${lines}\n`, 'utf8');
-  return { path: logPath, rowsAppended: scan.alerts.length };
+  const existingKeys = await loadExistingDateTickerKeys(logPath);
+  const rowsToAppend: string[] = [];
+  let rowsSkipped = 0;
+
+  for (const alert of scan.alerts) {
+    const key = `${alert.generatedAt.slice(0, 10)}::${alert.ticker.toUpperCase()}`;
+    if (existingKeys.has(key)) {
+      rowsSkipped += 1;
+      continue;
+    }
+    existingKeys.add(key);
+    rowsToAppend.push(alertToCsvRow(alert));
+  }
+
+  if (!rowsToAppend.length) {
+    return { path: logPath, rowsAppended: 0, rowsSkipped };
+  }
+
+  await appendFile(logPath, `${rowsToAppend.join('\n')}\n`, 'utf8');
+  return { path: logPath, rowsAppended: rowsToAppend.length, rowsSkipped };
 }
-

@@ -68,6 +68,10 @@ Auto-log each alert row into paper-trade CSV during scan:
 bun run scan:daily:log --tickers AAPL
 ```
 
+Notes:
+- Auto-log dedupes repeated runs for the same `Date + Ticker`.
+- Different tickers on the same date are still logged as separate rows.
+
 Specific tickers:
 ```bash
 bun run scan:daily --tickers AAPL,SHOP,TD

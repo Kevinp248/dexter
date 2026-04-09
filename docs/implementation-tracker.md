@@ -77,7 +77,7 @@ Branch: `feature-kevin-dexter`
 1. Add monthly calibration memo template using weekly review output.
 2. Add a quick command to print open-position risk summary before market open.
 3. Add confidence-calibration guardrails when high-confidence bucket underperforms.
-4. Add a de-duplication guard for same-day repeated auto-log rows.
+4. Add monthly report export that combines weekly + quality summaries.
 
 ## Work Log
 
@@ -156,3 +156,7 @@ Branch: `feature-kevin-dexter`
   - Added automatic scan-to-CSV logging (`--append-csv`, `bun run scan:daily:log`).
   - Added CSV exporter with fallback reason/retry columns and confidence capture.
   - Added regression test to ensure header creation + append behavior is stable.
+- 2026-04-09:
+  - Added de-duplication guard for auto-log rows (same `Date + Ticker` skips duplicates).
+  - Kept multi-ticker same-day logging enabled for broader watchlists.
+  - Added docs/examples for recording and selling multiple tickers via trade ledger.

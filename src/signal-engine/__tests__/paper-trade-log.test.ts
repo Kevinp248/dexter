@@ -105,31 +105,47 @@ function makeAlert(overrides: Partial<SignalPayload> = {}): SignalPayload {
 }
 
 describe('paper trade CSV append', () => {
-  test('creates header once and appends scan rows', async () => {
+  test('creates header once, dedupes same day/ticker, and supports multiple tickers', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'dexter-paper-log-'));
     const csvPath = path.join(dir, 'paper-trade-log.csv');
 
-    await appendScanAlertsToPaperTradeLog(
+    const first = await appendScanAlertsToPaperTradeLog(
       {
         generatedAt: '2026-04-09T18:40:44.324Z',
         alerts: [makeAlert()],
       },
       csvPath,
     );
+    expect(first.rowsAppended).toBe(1);
+    expect(first.rowsSkipped).toBe(0);
 
-    await appendScanAlertsToPaperTradeLog(
+    // Same day + same ticker should dedupe.
+    const second = await appendScanAlertsToPaperTradeLog(
       {
-        generatedAt: '2026-04-10T18:40:44.324Z',
-        alerts: [makeAlert({ generatedAt: '2026-04-10T18:40:44.324Z' })],
+        generatedAt: '2026-04-09T20:00:00.000Z',
+        alerts: [makeAlert({ generatedAt: '2026-04-09T20:00:00.000Z' })],
       },
       csvPath,
     );
+    expect(second.rowsAppended).toBe(0);
+    expect(second.rowsSkipped).toBe(1);
+
+    // Different ticker on same day should append.
+    const third = await appendScanAlertsToPaperTradeLog(
+      {
+        generatedAt: '2026-04-09T21:00:00.000Z',
+        alerts: [makeAlert({ ticker: 'MSFT', generatedAt: '2026-04-09T21:00:00.000Z' })],
+      },
+      csvPath,
+    );
+    expect(third.rowsAppended).toBe(1);
+    expect(third.rowsSkipped).toBe(0);
 
     const content = await readFile(csvPath, 'utf8');
     const lines = content.trim().split(/\r?\n/);
     expect(lines).toHaveLength(3);
     expect(lines[0]).toContain('Date,Ticker,action,finalAction,Confidence');
     expect(lines[1]).toContain('AAPL,HOLD,HOLD,29.05,skip');
-    expect(lines[2]).toContain('AAPL,HOLD,HOLD,29.05,skip');
+    expect(lines[2]).toContain('MSFT,HOLD,HOLD,29.05,skip');
   });
 });
