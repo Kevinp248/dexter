@@ -6,6 +6,18 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
     {
       "action": "HOLD",
       "confidence": 41.75,
+      "delta": {
+        "actionChanged": false,
+        "aggregateScoreChange": 0,
+        "confidenceChange": 0,
+        "finalActionChanged": false,
+        "hasPrevious": false,
+        "previousGeneratedAt": null,
+        "topDrivers": [
+          "No previous scan available",
+        ],
+        "weightedInputChanges": {},
+      },
       "executionPlan": {
         "constraints": {
           "blockedReasons": [],

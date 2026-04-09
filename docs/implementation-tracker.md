@@ -42,7 +42,7 @@ Branch: `feature-kevin-dexter`
 ### Phase 2B - Signal calibration and explainability (Planned)
 - [x] Externalize weights/thresholds into a versioned config.
 - [x] Add change log for threshold updates (what changed and why).
-- [ ] Add "why changed vs previous day" output.
+- [x] Add "why changed vs previous day" output.
 
 ### Phase 3 - Operational hardening (Planned)
 - [ ] Add daily scheduler instructions/playbook.
@@ -67,10 +67,10 @@ Branch: `feature-kevin-dexter`
 
 ## Next Steps (Ordered)
 
-1. Add "why changed vs previous day" delta output for each ticker.
-2. Add daily scheduler playbook and runbook for manual trade review.
-3. Add Canadian ticker nuance checks (liquidity + exchange metadata validation).
-4. Add retry/fallback policy for unavailable data sources.
+1. Add daily scheduler playbook and runbook for manual trade review.
+2. Add Canadian ticker nuance checks (liquidity + exchange metadata validation).
+3. Add retry/fallback policy for unavailable data sources.
+4. Start walk-forward validation design (purged/embargo style split policy).
 
 ## Work Log
 
@@ -100,3 +100,8 @@ Branch: `feature-kevin-dexter`
   - Refactored signal rules, execution model, risk model, and technical/fundamental/valuation analyzers to consume config.
   - Added parameter change log (`docs/parameter-changelog.md`) and README references.
   - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 13 tests, 1 snapshot).
+- 2026-04-09:
+  - Added previous-scan delta explanations per ticker (`delta` in signal payload).
+  - Added scan history persistence at `.dexter/signal-engine/last-scan.json`.
+  - Added regression test for delta behavior and updated snapshot baseline.
+  - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 14 tests, 1 snapshot).

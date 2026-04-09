@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { config } from 'dotenv';
 import { logger } from '../utils/logger.js';
+import { loadPreviousSignalsByTicker, saveLatestScan } from './history.js';
 import { runDailyScan } from './index.js';
 import { ScanOptions } from './models.js';
 
@@ -121,7 +122,9 @@ function parseArgs(argv: string[]): ScanOptions {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  options.previousSignalsByTicker = await loadPreviousSignalsByTicker();
   const scan = await runDailyScan(options);
+  await saveLatestScan(scan);
   console.log(JSON.stringify(scan, null, 2));
 }
 

@@ -191,4 +191,36 @@ describe('runDailyScan deterministic integration', () => {
     );
     expect(scan).toMatchSnapshot();
   });
+
+  test('delta explains action and aggregate changes versus previous scan', async () => {
+    const scan = await runDailyScan(
+      {
+        tickers: ['AAPL'],
+        previousSignalsByTicker: {
+          AAPL: {
+            generatedAt: '2025-12-31T00:00:00.000Z',
+            action: 'HOLD',
+            finalAction: 'HOLD',
+            confidence: 42,
+            aggregateScore: 0.01,
+            weightedInputs: {
+              technical: 0.01,
+              fundamentals: 0.0,
+              valuation: 0.0,
+              sentiment: 0.0,
+            },
+          },
+        },
+      },
+      makeProviders(0.9, 0.8, 0.85, 0.7, 0.16),
+    );
+
+    expect(scan.alerts).toHaveLength(1);
+    const delta = scan.alerts[0].delta;
+    expect(delta.hasPrevious).toBe(true);
+    expect(delta.actionChanged).toBe(true);
+    expect(delta.finalActionChanged).toBe(true);
+    expect(delta.aggregateScoreChange).toBeGreaterThan(0);
+    expect(delta.topDrivers.length).toBeGreaterThan(0);
+  });
 });

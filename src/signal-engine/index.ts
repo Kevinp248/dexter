@@ -14,9 +14,11 @@ import { evaluatePortfolioConstraints } from './portfolio-constraints.js';
 import { deriveConfidence, resolveAction } from './rules.js';
 import {
   ExecutionPlan,
+  PreviousSignalSnapshot,
   PositionContext,
   ScanOptions,
   SignalComponent,
+  SignalDelta,
   SignalPayload,
 } from './models.js';
 
@@ -97,6 +99,50 @@ function estimatePriceFromTechnical(
   const latest = technical.bars[technical.bars.length - 1];
   if (latest && Number.isFinite(latest.close) && latest.close > 0) return latest.close;
   return SIGNAL_CONFIG.execution.fallbackEstimatedPrice;
+}
+
+function buildSignalDelta(
+  previous: PreviousSignalSnapshot | undefined,
+  action: SignalPayload['action'],
+  finalAction: SignalPayload['finalAction'],
+  confidence: number,
+  aggregateScore: number,
+  weightedInputs: Record<string, number>,
+): SignalDelta {
+  if (!previous) {
+    return {
+      hasPrevious: false,
+      previousGeneratedAt: null,
+      actionChanged: false,
+      finalActionChanged: false,
+      confidenceChange: 0,
+      aggregateScoreChange: 0,
+      weightedInputChanges: {},
+      topDrivers: ['No previous scan available'],
+    };
+  }
+
+  const weightedInputChanges = Object.fromEntries(
+    Object.entries(weightedInputs).map(([key, value]) => [
+      key,
+      value - (previous.weightedInputs[key] ?? 0),
+    ]),
+  );
+  const topDrivers = Object.entries(weightedInputChanges)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .slice(0, 2)
+    .map(([key, value]) => `${key} ${value >= 0 ? '+' : ''}${value.toFixed(3)}`);
+
+  return {
+    hasPrevious: true,
+    previousGeneratedAt: previous.generatedAt,
+    actionChanged: previous.action !== action,
+    finalActionChanged: previous.finalAction !== finalAction,
+    confidenceChange: confidence - previous.confidence,
+    aggregateScoreChange: aggregateScore - previous.aggregateScore,
+    weightedInputChanges,
+    topDrivers,
+  };
 }
 
 type InterimAnalysis = {
@@ -253,6 +299,14 @@ export async function runDailyScan(
       estimatedShares > 0 &&
       (!costEstimate.isTradeableAfterCosts || !constraints.isAllowed);
     const finalAction = shouldDowngradeToHold ? 'HOLD' : action;
+    const delta = buildSignalDelta(
+      options.previousSignalsByTicker?.[item.ticker],
+      action,
+      finalAction,
+      confidence,
+      aggregateScore,
+      weightedInputs,
+    );
     const executionPlan: ExecutionPlan = {
       estimatedPrice,
       estimatedShares,
@@ -307,6 +361,7 @@ export async function runDailyScan(
       action,
       confidence,
       finalAction,
+      delta,
       positionContext,
       executionPlan,
       reasoning: {

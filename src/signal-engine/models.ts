@@ -18,6 +18,7 @@ export interface ScanOptions {
   tickers?: string[];
   positions?: Record<string, PositionContext>;
   portfolioValue?: number;
+  previousSignalsByTicker?: Record<string, PreviousSignalSnapshot>;
   executionConfig?: {
     costMultiplier?: number;
     minimumEdgeAfterCostsBps?: number;
@@ -54,11 +55,32 @@ export interface ExecutionPlan {
   constraints: PortfolioConstraintEvaluation;
 }
 
+export interface PreviousSignalSnapshot {
+  generatedAt: string;
+  action: SignalAction;
+  finalAction: SignalAction;
+  confidence: number;
+  aggregateScore: number;
+  weightedInputs: Record<string, number>;
+}
+
+export interface SignalDelta {
+  hasPrevious: boolean;
+  previousGeneratedAt: string | null;
+  actionChanged: boolean;
+  finalActionChanged: boolean;
+  confidenceChange: number;
+  aggregateScoreChange: number;
+  weightedInputChanges: Record<string, number>;
+  topDrivers: string[];
+}
+
 export interface SignalPayload {
   ticker: string;
   action: SignalAction;
   confidence: number;
   finalAction: SignalAction;
+  delta: SignalDelta;
   positionContext: PositionContext;
   executionPlan: ExecutionPlan;
   reasoning: {
