@@ -75,6 +75,7 @@ Branch: `feature-kevin-dexter`
 12. Added postmortem incident engine for losses and edge-divergence cases.
 13. Added calibration proposal pipeline with gated checks and manual approval apply.
 14. Added a single-command operator workflow (`bun run ops:daily`).
+15. Added leakage-safe trial backtest command/reporting for AAPL January workflows.
 
 ## Next Steps (Ordered)
 
@@ -82,6 +83,7 @@ Branch: `feature-kevin-dexter`
 2. Externalize trusted-source whitelist into a managed config file.
 3. Add ticker-level postmortem severity policy (warn-only vs temporary trade block).
 4. Add monthly report export combining weekly + quality + postmortem summaries.
+5. Add multi-ticker trial backtest portfolio mode after single-ticker validation.
 
 ## Work Log
 
@@ -170,3 +172,8 @@ Branch: `feature-kevin-dexter`
   - Added `src/signal-engine/calibration.ts` + `src/signal-engine/calibration.cli.ts` for proposal -> gate -> manual apply workflow.
   - Added runtime config overrides loading from `.dexter/signal-engine/config-overrides.json`.
   - Added `src/signal-engine/daily-operator.ts` + `src/signal-engine/daily-operator.cli.ts` and script `bun run ops:daily`.
+- 2026-04-09:
+  - Added time-aware analysis context support (as-of/start/end) to avoid future data in trial backtests.
+  - Added trial backtest engine + CLI (`bun run backtest:trial`) with long-only, next-open execution policy.
+  - Added JSON/CSV report artifacts under `.dexter/signal-engine/backtests/`.
+  - Added deterministic tests for no-lookahead sequencing, long-only mapping, equity reconciliation, and 31-day January output.

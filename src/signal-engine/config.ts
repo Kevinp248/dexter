@@ -20,6 +20,7 @@ export interface SignalEngineConfig {
   confidence: {
     scoreWeight: number;
     riskWeight: number;
+    degradedDataPenalty: number;
   };
   technical: {
     trendWeight: number;
@@ -142,6 +143,9 @@ export interface SignalEngineConfig {
       minHistoryBars: number;
     };
   };
+  quality: {
+    noSignalFallbackRatio: number;
+  };
 }
 
 const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
@@ -163,6 +167,7 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
   confidence: {
     scoreWeight: 70,
     riskWeight: 30,
+    degradedDataPenalty: 0.65,
   },
   technical: {
     trendWeight: 0.25,
@@ -284,6 +289,9 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
       minAverageDollarVolume20d: 500_000,
       minHistoryBars: 20,
     },
+  },
+  quality: {
+    noSignalFallbackRatio: 0.5,
   },
 };
 

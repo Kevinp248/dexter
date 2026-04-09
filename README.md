@@ -193,6 +193,15 @@ bun run quality:signals
 Signal-quality guide:
 `docs/signal-quality-dashboard.md`
 
+Trial backtest (leakage-safe, next-open fills):
+```bash
+bun run backtest:trial --ticker AAPL --start 2026-01-01 --end 2026-01-31 --capital 10000
+```
+
+Output files:
+- `.dexter/signal-engine/backtests/trial-backtest-AAPL-2026-01-01-2026-01-31.json`
+- `.dexter/signal-engine/backtests/trial-backtest-AAPL-2026-01-01-2026-01-31.csv`
+
 Auto-append scan output rows to paper-trade CSV:
 ```bash
 bun run scan:daily:log --tickers AAPL

@@ -26,12 +26,25 @@ import {
   SignalPayload,
 } from './models.js';
 import { evaluateRegionalMarketCheck } from './regional-checks.js';
+import { AnalysisContext } from '../agents/analysis/types.js';
 
 export interface ScanProviders {
-  runTechnicalAnalysis: typeof runTechnicalAnalysis;
-  runFundamentalAnalysis: typeof runFundamentalAnalysis;
-  runSentimentAnalysis: typeof runSentimentAnalysis;
-  runValuationAnalysis: typeof runValuationAnalysis;
+  runTechnicalAnalysis: (
+    ticker: string,
+    context?: AnalysisContext,
+  ) => ReturnType<typeof runTechnicalAnalysis>;
+  runFundamentalAnalysis: (
+    ticker: string,
+    context?: AnalysisContext,
+  ) => ReturnType<typeof runFundamentalAnalysis>;
+  runSentimentAnalysis: (
+    ticker: string,
+    context?: AnalysisContext,
+  ) => ReturnType<typeof runSentimentAnalysis>;
+  runValuationAnalysis: (
+    ticker: string,
+    context?: AnalysisContext,
+  ) => ReturnType<typeof runValuationAnalysis>;
 }
 
 const defaultProviders: ScanProviders = {
@@ -296,6 +309,16 @@ type InterimAnalysis = {
   fallbackEvents: FallbackEvent[];
 };
 
+function hasFallback(events: FallbackEvent[], component: string): boolean {
+  return events.some((event) => event.component === component && event.fallbackUsed);
+}
+
+function coreFallbackRatio(events: FallbackEvent[]): number {
+  const core = ['technical', 'fundamental', 'sentiment', 'valuation'];
+  const failed = core.filter((component) => hasFallback(events, component)).length;
+  return failed / core.length;
+}
+
 function detectDataFallbacks(
   ticker: string,
   technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>,
@@ -356,7 +379,7 @@ export async function runDailyScan(
     const [technicalResult, fundamentalResult, sentimentResult, valuationResult] =
       await Promise.all([
         runWithRetryAndFallback(
-        () => providers.runTechnicalAnalysis(entry.ticker),
+        () => providers.runTechnicalAnalysis(entry.ticker, options.analysisContext),
         {
           ticker: entry.ticker,
           score: 0,
@@ -378,7 +401,7 @@ export async function runDailyScan(
         'Retry in 5-10 minutes. If still failing, validate historical price endpoint and symbol format.',
       ),
         runWithRetryAndFallback(
-        () => providers.runFundamentalAnalysis(entry.ticker),
+        () => providers.runFundamentalAnalysis(entry.ticker, options.analysisContext),
         {
           ticker: entry.ticker,
           score: 0,
@@ -397,7 +420,7 @@ export async function runDailyScan(
         'Retry after data provider refresh; verify financial-metrics snapshot availability for the ticker.',
       ),
         runWithRetryAndFallback(
-        () => providers.runSentimentAnalysis(entry.ticker),
+        () => providers.runSentimentAnalysis(entry.ticker, options.analysisContext),
         {
           ticker: entry.ticker,
           score: 0,
@@ -409,7 +432,7 @@ export async function runDailyScan(
         'Retry after 15 minutes; if still empty, treat sentiment as low-priority and use other components.',
       ),
         runWithRetryAndFallback(
-        () => providers.runValuationAnalysis(entry.ticker),
+        () => providers.runValuationAnalysis(entry.ticker, options.analysisContext),
         {
           ticker: entry.ticker,
           score: 0,
@@ -463,12 +486,32 @@ export async function runDailyScan(
 
     const avgCorr = averageCorrelationForTicker(item.ticker, returnsByTicker);
     const risk = reviewRisk(item.technical, item.fundamental, avgCorr);
-    const weightedInputs = {
+    const fallbackRatio = coreFallbackRatio(item.fallbackEvents);
+    const isDegradedDataMode =
+      hasFallback(item.fallbackEvents, 'fundamental') || hasFallback(item.fallbackEvents, 'valuation');
+    let weightedInputs = {
       technical: item.technical.score * SIGNAL_CONFIG.aggregateWeights.technical,
       fundamentals: item.fundamental.score * SIGNAL_CONFIG.aggregateWeights.fundamentals,
       valuation: item.valuation.score * SIGNAL_CONFIG.aggregateWeights.valuation,
       sentiment: item.sentiment.score * SIGNAL_CONFIG.aggregateWeights.sentiment,
     };
+    if (isDegradedDataMode) {
+      weightedInputs = {
+        technical: item.technical.score * 0.8,
+        fundamentals: 0,
+        valuation: 0,
+        sentiment: item.sentiment.score * 0.2,
+      };
+      item.fallbackEvents.push({
+        component: 'degraded_mode',
+        fallbackUsed: true,
+        reason: 'Fundamental/valuation coverage degraded; switched to technical+sentiment fallback.',
+        retrySuggestion:
+          'Restore paid data coverage or switch provider for financial statements/market-cap endpoints.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
     const aggregateScore = clamp(
       weightedInputs.technical +
         weightedInputs.fundamentals +
@@ -479,7 +522,10 @@ export async function runDailyScan(
     );
     const positionContext = getPositionContext(item.ticker, options.positions);
     const action = resolveAction(aggregateScore, risk, positionContext);
-    const confidence = deriveConfidence(aggregateScore, risk);
+    const baseConfidence = deriveConfidence(aggregateScore, risk);
+    const confidence = isDegradedDataMode
+      ? roundTo(baseConfidence * SIGNAL_CONFIG.confidence.degradedDataPenalty, 4)
+      : baseConfidence;
     const estimatedPrice = estimatePriceFromTechnical(item.technical);
     const targetNotional = estimateTargetNotionalUsd(
       action,
@@ -518,8 +564,23 @@ export async function runDailyScan(
     );
     const shouldDowngradeForRegionalChecks =
       action !== 'HOLD' && estimatedShares > 0 && !regionalMarketCheck.isTradeableInRegion;
+    const suppressedByQualityGuard =
+      fallbackRatio >= SIGNAL_CONFIG.quality.noSignalFallbackRatio;
+    if (suppressedByQualityGuard) {
+      item.fallbackEvents.push({
+        component: 'quality_guard',
+        fallbackUsed: true,
+        reason: `Fallback ratio ${(fallbackRatio * 100).toFixed(1)}% exceeded NO_SIGNAL guard.`,
+        retrySuggestion:
+          'Do not trade this signal yet. Retry after fixing provider coverage and rerun scan.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
     const finalAction =
-      shouldDowngradeToHold || shouldDowngradeForRegionalChecks ? 'HOLD' : action;
+      suppressedByQualityGuard || shouldDowngradeToHold || shouldDowngradeForRegionalChecks
+        ? 'HOLD'
+        : action;
     const delta = buildSignalDelta(
       options.previousSignalsByTicker?.[item.ticker],
       action,
@@ -584,9 +645,14 @@ export async function runDailyScan(
 
     const payload: SignalPayload = {
       ticker: item.ticker,
-      action,
-      confidence,
+      action: suppressedByQualityGuard ? 'HOLD' : action,
+      confidence: suppressedByQualityGuard ? 0 : confidence,
       finalAction,
+      qualityGuard: {
+        suppressed: suppressedByQualityGuard,
+        reason: suppressedByQualityGuard ? 'NO_SIGNAL: data quality too degraded' : null,
+        fallbackRatio: roundTo(fallbackRatio, 4),
+      },
       delta,
       regionalMarketCheck,
       positionContext,

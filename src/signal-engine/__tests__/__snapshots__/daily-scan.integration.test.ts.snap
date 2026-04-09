@@ -99,6 +99,11 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
         "unrealizedPnlPct": 0,
         "unrealizedPnlUsd": 0,
       },
+      "qualityGuard": {
+        "fallbackRatio": 0,
+        "reason": null,
+        "suppressed": false,
+      },
       "reasoning": {
         "aggregateScore": 0.275,
         "components": [

@@ -1,4 +1,5 @@
 import { fetchCompanyNews } from '../../data/market.js';
+import { AnalysisContext } from './types.js';
 
 const POSITIVE = ['beat', 'upgrade', 'growth', 'surge', 'record', 'bullish', 'win', 'expansion'];
 const NEGATIVE = ['miss', 'downgrade', 'loss', 'lawsuit', 'regulatory', 'cut', 'warning', 'bearish'];
@@ -19,8 +20,19 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-export async function runSentimentAnalysis(ticker: string): Promise<SentimentSignal> {
-  const articles = await fetchCompanyNews(ticker, 5);
+function daysBefore(date: string, days: number): string {
+  const dt = new Date(date);
+  dt.setDate(dt.getDate() - days);
+  return dt.toISOString().slice(0, 10);
+}
+
+export async function runSentimentAnalysis(
+  ticker: string,
+  context: AnalysisContext = {},
+): Promise<SentimentSignal> {
+  const endDate = context.asOfDate ?? context.endDate;
+  const startDate = endDate ? daysBefore(endDate, 7) : undefined;
+  const articles = await fetchCompanyNews(ticker, 5, { startDate, endDate });
   let positives = 0;
   let negatives = 0;
 

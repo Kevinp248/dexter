@@ -173,6 +173,23 @@ bun run quality:signals
 
 Use this to monitor hit rate by `finalAction` and confidence bucket.
 
+## 8.25) January trial backtest (AAPL example)
+
+Leakage-safe trial mode:
+- Decision at day close.
+- Execution at next trading day open.
+- Long-only policy (`COVER` mapped to `HOLD`).
+
+Run:
+
+```bash
+bun run backtest:trial --ticker AAPL --start 2026-01-01 --end 2026-01-31 --capital 10000
+```
+
+Artifacts:
+- `.dexter/signal-engine/backtests/trial-backtest-AAPL-2026-01-01-2026-01-31.json`
+- `.dexter/signal-engine/backtests/trial-backtest-AAPL-2026-01-01-2026-01-31.csv`
+
 ## 8.3) Postmortem (loss/deviation diagnostics)
 
 Run postmortem incident generation:

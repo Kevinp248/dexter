@@ -1,5 +1,6 @@
 import { fetchKeyRatios } from '../../data/market.js';
 import { SIGNAL_CONFIG } from '../../signal-engine/config.js';
+import { AnalysisContext } from './types.js';
 
 type PillarSignal = {
   signal: 'bullish' | 'bearish' | 'neutral';
@@ -55,8 +56,14 @@ function scoreFromCounts(
   return { signal: 'neutral', score: 0 };
 }
 
-export async function runFundamentalAnalysis(ticker: string): Promise<FundamentalSignal> {
-  const ratios = await fetchKeyRatios(ticker);
+export async function runFundamentalAnalysis(
+  ticker: string,
+  context: AnalysisContext = {},
+): Promise<FundamentalSignal> {
+  const ratios = await fetchKeyRatios(ticker, {
+    asOfDate: context.asOfDate,
+    endDate: context.endDate,
+  });
 
   const metrics: FundamentalSignal['metrics'] = {
     peRatio: asNumber(ratios.pe_ratio),

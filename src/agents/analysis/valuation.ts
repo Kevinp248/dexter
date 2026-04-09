@@ -4,6 +4,7 @@ import {
   fetchKeyRatios,
 } from '../../data/market.js';
 import { SIGNAL_CONFIG } from '../../signal-engine/config.js';
+import { AnalysisContext } from './types.js';
 
 type MethodResult = {
   value: number;
@@ -90,11 +91,15 @@ function asMethod(value: number, marketCap: number, label: string): MethodResult
   };
 }
 
-export async function runValuationAnalysis(ticker: string): Promise<ValuationSignal> {
+export async function runValuationAnalysis(
+  ticker: string,
+  context: AnalysisContext = {},
+): Promise<ValuationSignal> {
+  const range = { asOfDate: context.asOfDate, endDate: context.endDate };
   const [ratios, cashFlows, incomeStatements] = await Promise.all([
-    fetchKeyRatios(ticker),
-    fetchCashFlowStatements(ticker, 8),
-    fetchIncomeStatements(ticker, 8),
+    fetchKeyRatios(ticker, range),
+    fetchCashFlowStatements(ticker, 8, range),
+    fetchIncomeStatements(ticker, 8, range),
   ]);
 
   const marketCap = asNumber(ratios.market_cap) ?? 0;

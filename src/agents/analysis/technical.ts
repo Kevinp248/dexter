@@ -1,5 +1,6 @@
 import { fetchHistoricalPrices } from '../../data/market.js';
 import { SIGNAL_CONFIG } from '../../signal-engine/config.js';
+import { AnalysisContext } from './types.js';
 
 type SubSignal = {
   signal: 'bullish' | 'bearish' | 'neutral';
@@ -245,8 +246,18 @@ function calculateStatArbSignal(closes: number[]): SubSignal {
   };
 }
 
-export async function runTechnicalAnalysis(ticker: string): Promise<TechnicalSignal> {
-  const history = await fetchHistoricalPrices(ticker, 220);
+export async function runTechnicalAnalysis(
+  ticker: string,
+  context: AnalysisContext = {},
+): Promise<TechnicalSignal> {
+  const history =
+    context.priceHistoryOverride && context.priceHistoryOverride.length > 0
+      ? context.priceHistoryOverride
+      : await fetchHistoricalPrices(ticker, 220, {
+          startDate: context.startDate,
+          endDate: context.endDate,
+          asOfDate: context.asOfDate,
+        });
   const closes = history.map((bar) => bar.close).filter(Number.isFinite);
   const highs = history.map((bar) => bar.high).filter(Number.isFinite);
   const lows = history.map((bar) => bar.low).filter(Number.isFinite);

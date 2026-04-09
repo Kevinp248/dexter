@@ -1,5 +1,6 @@
 import { RiskAssessment } from '../risk/risk.js';
 import { WatchlistEntry } from '../watchlists/watchlists.js';
+import { AnalysisContext } from '../agents/analysis/types.js';
 
 export type SignalAction = 'BUY' | 'SELL' | 'HOLD' | 'COVER';
 
@@ -35,6 +36,7 @@ export interface PositionStateInput {
 
 export interface ScanOptions {
   tickers?: string[];
+  analysisContext?: AnalysisContext;
   positions?: Record<string, PositionContext>;
   positionStatesByTicker?: Record<string, PositionStateInput>;
   portfolioValue?: number;
@@ -124,6 +126,11 @@ export interface SignalPayload {
   action: SignalAction;
   confidence: number;
   finalAction: SignalAction;
+  qualityGuard?: {
+    suppressed: boolean;
+    reason: string | null;
+    fallbackRatio: number;
+  };
   delta: SignalDelta;
   regionalMarketCheck: RegionalMarketCheck;
   positionContext: PositionContext;
