@@ -57,6 +57,7 @@ Branch: `feature-kevin-dexter`
 - [x] Add action downgrade to `HOLD` when costs/constraints invalidate trade.
 - [x] Add regression test for cost-based downgrade behavior.
 - [x] Start walk-forward validation design (purged/embargo style split policy).
+- [x] Add weekly performance review script/checklist tied to paper-trade log.
 
 ## Completed Steps
 
@@ -69,10 +70,10 @@ Branch: `feature-kevin-dexter`
 
 ## Next Steps (Ordered)
 
-1. Add weekly performance review script/checklist tied to paper-trade log.
-2. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
-3. Add CSV export for daily signals + fallback diagnostics.
-4. Add a simple CLI/report wrapper that prints walk-forward folds for a date range.
+1. Add alert-quality dashboard metrics (hit rate by action/confidence bucket).
+2. Add CSV export for daily signals + fallback diagnostics.
+3. Add a simple CLI/report wrapper that prints walk-forward folds for a date range.
+4. Add monthly calibration memo template using weekly review output.
 
 ## Work Log
 
@@ -128,3 +129,8 @@ Branch: `feature-kevin-dexter`
   - Added walk-forward validation design utilities (`buildPurgedWalkForwardFolds`, `validatePurgedWalkForwardFolds`).
   - Added deterministic split tests (purge/embargo spacing, max folds, invalid config guardrails).
   - Added `npm run test:walkforward` and included walk-forward tests in `npm run test:signals`.
+- 2026-04-09:
+  - Added weekly review script (`bun run review:weekly`) tied to paper-trade CSV log.
+  - Added deterministic parser/summary logic for win rate, avg/median result, fallback hygiene, and override discipline.
+  - Added weekly review tests and included them in `npm run test:signals`.
+  - Added weekly review runbook docs and expanded paper-trade template with fallback retry columns.

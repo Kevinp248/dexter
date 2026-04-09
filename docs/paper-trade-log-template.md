@@ -2,6 +2,14 @@
 
 Use this after each scan and manual decision.
 
+Recommended file path for weekly review script:
+- `.dexter/signal-engine/paper-trade-log.csv`
+
+CSV header (copy/paste as first row):
+```csv
+Date,Ticker,action,finalAction,Decision,Direction,Entry Price,Position Size (shares),Notional,Cost Estimate (USD),Key Delta Drivers,Risk Checks,Reason for Override,Exit Date,Exit Price,Result (%),Fallback Had Fallback,Fallback Reason,Fallback Retry Suggestion,Notes / Lessons
+```
+
 ## Trade Log Columns
 
 - Date
@@ -20,6 +28,9 @@ Use this after each scan and manual decision.
 - Exit Date
 - Exit Price
 - Result (%)
+- Fallback Had Fallback (`true` / `false`)
+- Fallback Reason
+- Fallback Retry Suggestion
 - Notes / Lessons
 
 ## Example row

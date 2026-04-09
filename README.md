@@ -177,6 +177,14 @@ Focused walk-forward split policy check:
 npm run test:walkforward
 ```
 
+Weekly paper-trade performance review:
+```bash
+bun run review:weekly
+```
+
+Weekly review guide:
+`docs/weekly-performance-review.md`
+
 Versioned strategy parameters:
 - `src/signal-engine/config.ts`
 - `docs/parameter-changelog.md`

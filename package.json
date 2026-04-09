@@ -15,9 +15,10 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "test:signals": "npx jest --runInBand src/signal-engine/__tests__/rules.test.ts src/signal-engine/__tests__/daily-scan.integration.test.ts src/signal-engine/__tests__/walk-forward.test.ts",
+    "test:signals": "npx jest --runInBand src/signal-engine/__tests__/rules.test.ts src/signal-engine/__tests__/daily-scan.integration.test.ts src/signal-engine/__tests__/walk-forward.test.ts src/signal-engine/__tests__/weekly-review.test.ts",
     "test:walkforward": "npx jest --runInBand src/signal-engine/__tests__/walk-forward.test.ts",
     "scan:daily": "bun run src/signal-engine/daily-scan.ts",
+    "review:weekly": "bun run src/signal-engine/weekly-review.cli.ts",
     "postinstall": "playwright install chromium"
   },
   "dependencies": {

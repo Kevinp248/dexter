@@ -25,6 +25,7 @@ If commands, thresholds, or workflow change, update this file in the same PR.
 3. Review deltas and risk notes.
 4. Decide manually whether to execute.
 5. Log your action for later review.
+6. Run weekly performance review once per week.
 
 Do not skip step 1.
 
@@ -124,6 +125,18 @@ Before placing a trade:
 After decision, log it in:
 - `docs/paper-trade-log-template.md`
 
+## 8.1) Weekly performance review
+
+```bash
+bun run review:weekly
+```
+
+If you want machine-readable output for tracking:
+
+```bash
+bun run review:weekly --json
+```
+
 ## 9) If you change strategy parameters
 
 When editing `src/signal-engine/config.ts`:
@@ -146,3 +159,5 @@ When editing `src/signal-engine/config.ts`:
   - `docs/walk-forward-validation.md`
 - Paper trade log template:
   - `docs/paper-trade-log-template.md`
+- Weekly performance review:
+  - `docs/weekly-performance-review.md`
