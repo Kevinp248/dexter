@@ -46,7 +46,8 @@ export async function fetchHistoricalPrices(
     const rawBars = Array.isArray(data.prices) ? data.prices : [];
     return rawBars
       .map((row) => ({
-        date: String(row.date ?? row.period ?? ''),
+        // FinancialDatasets can return `time` instead of `date` for price bars.
+        date: String(row.date ?? row.time ?? row.period ?? ''),
         open: Number(row.open ?? row.price_open ?? 0),
         high: Number(row.high ?? row.price_high ?? 0),
         low: Number(row.low ?? row.price_low ?? 0),
