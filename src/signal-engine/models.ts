@@ -18,6 +18,10 @@ export interface ScanOptions {
   tickers?: string[];
   positions?: Record<string, PositionContext>;
   portfolioValue?: number;
+  executionConfig?: {
+    costMultiplier?: number;
+    minimumEdgeAfterCostsBps?: number;
+  };
   portfolioContext?: {
     grossExposurePct?: number;
     sectorExposurePct?: Record<string, number>;

@@ -31,12 +31,12 @@ Branch: `feature-kevin-dexter`
 
 ### Phase 2A - Deterministic validation harness (In Progress)
 - [x] Add integration test harness for `runDailyScan` using mocked data.
-- [ ] Add golden scenarios:
+- [x] Add golden scenarios:
   - [x] strong bullish -> `BUY`
   - [x] strong bearish -> `SELL`
   - [x] mixed/conflicted -> `HOLD`
   - [x] short position + thesis flip -> `COVER`
-- [ ] Add fixture snapshots for expected JSON output shape.
+- [x] Add fixture snapshots for expected JSON output shape.
 - [x] Document how to run validation suite without Bun.
 
 ### Phase 2B - Signal calibration and explainability (Planned)
@@ -55,7 +55,7 @@ Branch: `feature-kevin-dexter`
 - [x] Add portfolio guardrails (gross exposure + sector exposure caps).
 - [x] Add alert-level execution plan fields (shares, notional, cost-adjusted edge).
 - [x] Add action downgrade to `HOLD` when costs/constraints invalidate trade.
-- [ ] Add regression test for cost-based downgrade behavior.
+- [x] Add regression test for cost-based downgrade behavior.
 
 ## Completed Steps
 
@@ -67,10 +67,10 @@ Branch: `feature-kevin-dexter`
 
 ## Next Steps (Ordered)
 
-1. Add snapshot-style fixture test for full JSON output shape from `runDailyScan`.
-2. Add multi-ticker correlation regression case in risk scoring.
-3. Add cost-model regression case that downgrades trade to `HOLD`.
-4. Begin Phase 2B config externalization (weights/thresholds file).
+1. Begin Phase 2B config externalization (weights/thresholds file).
+2. Add "why changed vs previous day" delta output for each ticker.
+3. Add daily scheduler playbook and runbook for manual trade review.
+4. Add Canadian ticker nuance checks (liquidity + exchange metadata validation).
 
 ## Work Log
 
@@ -89,3 +89,9 @@ Branch: `feature-kevin-dexter`
   - Added integration test for gross-exposure cap forcing `BUY` -> `HOLD`.
   - Added CLI flags for portfolio context (`--portfolio-value`, `--gross-exposure`, `--max-gross`, `--sector-exposure`, `--max-sector`).
   - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 10 tests).
+- 2026-04-09:
+  - Added deterministic snapshot fixture test for full `runDailyScan` output shape.
+  - Added multi-ticker correlation regression case (expect correlation multiplier = 0.7).
+  - Added explicit cost-stress downgrade regression (`BUY` -> `HOLD`) with execution overrides.
+  - Added execution stress CLI flags (`--cost-multiplier`, `--min-edge-bps`).
+  - Validation status: `typecheck` pass, `npm run test:signals` pass (2 suites, 13 tests, 1 snapshot).

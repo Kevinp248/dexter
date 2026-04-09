@@ -9,6 +9,10 @@ type CostInputs = {
   confidence: number;
   aggregateScore: number;
   notionalUsd: number;
+  config?: {
+    costMultiplier?: number;
+    minimumEdgeAfterCostsBps?: number;
+  };
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -49,16 +53,18 @@ export function estimateTargetNotionalUsd(
 
 export function estimateExecutionCosts(inputs: CostInputs): ExecutionCostEstimate {
   const { spreadBps, slippageBps, feeBps, borrowDailyBps } = getRegionCostBps(inputs.watchlist.region);
-  const oneWayCostBps = spreadBps + slippageBps + feeBps;
+  const costMultiplier = clamp(inputs.config?.costMultiplier ?? 1, 0.25, 20);
+  const oneWayCostBps = (spreadBps + slippageBps + feeBps) * costMultiplier;
   const holdingDays = 5; // default weekly hold assumption for daily scanner signals
   const borrowBps = inputs.action === 'COVER' || inputs.position.shortShares > 0
-    ? borrowDailyBps * holdingDays
+    ? borrowDailyBps * holdingDays * costMultiplier
     : 0;
   const roundTripCostBps = oneWayCostBps * 2 + borrowBps;
 
   const expectedEdgeBps = Math.abs(inputs.aggregateScore) * 250 + inputs.confidence * 0.6;
   const expectedEdgeAfterCostsBps = expectedEdgeBps - roundTripCostBps;
   const estimatedRoundTripCostUsd = (inputs.notionalUsd * roundTripCostBps) / 10000;
+  const minEdge = inputs.config?.minimumEdgeAfterCostsBps ?? 0;
 
   return {
     oneWayCostBps,
@@ -66,6 +72,6 @@ export function estimateExecutionCosts(inputs: CostInputs): ExecutionCostEstimat
     estimatedRoundTripCostUsd,
     expectedEdgeBps,
     expectedEdgeAfterCostsBps,
-    isTradeableAfterCosts: expectedEdgeAfterCostsBps > 0,
+    isTradeableAfterCosts: expectedEdgeAfterCostsBps > minEdge,
   };
 }

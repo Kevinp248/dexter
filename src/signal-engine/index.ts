@@ -238,6 +238,7 @@ export async function runDailyScan(
       confidence,
       aggregateScore,
       notionalUsd,
+      config: options.executionConfig,
     });
     const constraints = evaluatePortfolioConstraints({
       action,

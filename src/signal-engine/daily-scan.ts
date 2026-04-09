@@ -90,6 +90,26 @@ function parseArgs(argv: string[]): ScanOptions {
       i += 1;
       continue;
     }
+
+    if (arg === '--cost-multiplier' && argv[i + 1]) {
+      const value = Number(argv[i + 1]);
+      if (Number.isFinite(value) && value > 0) {
+        options.executionConfig = options.executionConfig ?? {};
+        options.executionConfig.costMultiplier = value;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--min-edge-bps' && argv[i + 1]) {
+      const value = Number(argv[i + 1]);
+      if (Number.isFinite(value) && value >= 0) {
+        options.executionConfig = options.executionConfig ?? {};
+        options.executionConfig.minimumEdgeAfterCostsBps = value;
+      }
+      i += 1;
+      continue;
+    }
   }
 
   if (options.positions && Object.keys(options.positions).length === 0) {

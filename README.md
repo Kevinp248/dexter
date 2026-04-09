@@ -136,6 +136,11 @@ bun run scan:daily \
   --max-sector 0.35
 ```
 
+Stress-test execution assumptions:
+```bash
+bun run scan:daily --tickers AAPL --cost-multiplier 8 --min-edge-bps 100
+```
+
 Add this command to a scheduler (cron, `croner`, etc.) for once-a-day execution during market hours.
 
 Core logic mapping (ai-hedge-fund + Dexter):

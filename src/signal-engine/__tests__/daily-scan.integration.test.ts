@@ -79,6 +79,15 @@ function makeProviders(
 }
 
 describe('runDailyScan deterministic integration', () => {
+  beforeAll(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-02T00:00:00.000Z'));
+  });
+
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+
   test('golden scenario: strong bullish stack -> BUY', async () => {
     const scan = await runDailyScan(
       { tickers: ['AAPL'] },
@@ -135,5 +144,51 @@ describe('runDailyScan deterministic integration', () => {
     expect(scan.alerts[0].action).toBe('BUY');
     expect(scan.alerts[0].finalAction).toBe('HOLD');
     expect(scan.alerts[0].executionPlan.constraints.isAllowed).toBe(false);
+  });
+
+  test('execution cost stress downgrades BUY to HOLD', async () => {
+    const scan = await runDailyScan(
+      {
+        tickers: ['AAPL'],
+        executionConfig: {
+          costMultiplier: 8,
+          minimumEdgeAfterCostsBps: 100,
+        },
+      },
+      makeProviders(0.7, 0.6, 0.65, 0.4, 0.2),
+    );
+    expect(scan.alerts).toHaveLength(1);
+    expect(scan.alerts[0].action).toBe('BUY');
+    expect(scan.alerts[0].finalAction).toBe('HOLD');
+    expect(scan.alerts[0].executionPlan.costEstimate.isTradeableAfterCosts).toBe(false);
+  });
+
+  test('high-correlation basket applies conservative correlation multiplier', async () => {
+    const scan = await runDailyScan(
+      { tickers: ['AAPL', 'MSFT'] },
+      makeProviders(0.65, 0.55, 0.5, 0.3, 0.2),
+    );
+    expect(scan.alerts).toHaveLength(2);
+    for (const alert of scan.alerts) {
+      expect(alert.reasoning.risk.averageCorrelation).not.toBeNull();
+      expect(alert.reasoning.risk.correlationMultiplier).toBe(0.7);
+    }
+  });
+
+  test('snapshot: full output shape remains stable', async () => {
+    const scan = await runDailyScan(
+      {
+        tickers: ['SHOP'],
+        portfolioValue: 120_000,
+        portfolioContext: {
+          grossExposurePct: 0.3,
+          maxGrossExposurePct: 1.0,
+          sectorExposurePct: { 'E-commerce': 0.15 },
+          maxSectorExposurePct: 0.4,
+        },
+      },
+      makeProviders(0.4, 0.2, 0.3, 0.1, 0.2),
+    );
+    expect(scan).toMatchSnapshot();
   });
 });
