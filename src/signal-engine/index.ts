@@ -13,6 +13,7 @@ import {
 import { evaluatePortfolioConstraints } from './portfolio-constraints.js';
 import { deriveConfidence, resolveAction } from './rules.js';
 import {
+  DataCompleteness,
   ExecutionPlan,
   FallbackEvent,
   PositionPerformance,
@@ -366,6 +367,57 @@ function detectDataFallbacks(
   return events;
 }
 
+function evaluateDataCompleteness(
+  technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>,
+  fundamental: Awaited<ReturnType<typeof runFundamentalAnalysis>>,
+  sentiment: Awaited<ReturnType<typeof runSentimentAnalysis>>,
+  valuation: Awaited<ReturnType<typeof runValuationAnalysis>>,
+): DataCompleteness {
+  const barsCount = technical.bars.length;
+  const technicalScore = clamp(barsCount / 120, 0, 1);
+  const fundamentalMetricCount = Object.values(fundamental.metrics).filter(
+    (value) => value !== undefined,
+  ).length;
+  const fundamentalScore = clamp(fundamentalMetricCount / 8, 0, 1);
+  const valuationMethodCount = Object.values(valuation.methods).filter(
+    (method) => Number.isFinite(method.value) && method.value > 0,
+  ).length;
+  const valuationScore =
+    valuation.marketCap > 0 ? clamp(valuationMethodCount / 4, 0, 1) : 0;
+  const sentimentSignals = sentiment.positive + sentiment.negative;
+  const sentimentScore = sentimentSignals > 0 ? 1 : 0.5;
+
+  const score = roundTo(
+    technicalScore * 0.35 +
+      fundamentalScore * 0.3 +
+      valuationScore * 0.3 +
+      sentimentScore * 0.05,
+    4,
+  );
+  const missingCritical: string[] = [];
+  if (barsCount < 20) missingCritical.push('technical.price_history');
+  if (fundamentalMetricCount === 0) missingCritical.push('fundamental.metrics');
+  if (valuation.marketCap <= 0 || valuationMethodCount === 0) {
+    missingCritical.push('valuation.core_inputs');
+  }
+
+  const notes = [
+    `Technical bars: ${barsCount}`,
+    `Fundamental metrics present: ${fundamentalMetricCount}`,
+    `Valuation methods with valid value: ${valuationMethodCount}`,
+    `Sentiment signal count: ${sentimentSignals}`,
+  ];
+  const status: DataCompleteness['status'] =
+    missingCritical.length > 0 ? 'fail' : score < 0.8 ? 'warn' : 'pass';
+
+  return {
+    score,
+    status,
+    missingCritical,
+    notes,
+  };
+}
+
 export async function runDailyScan(
   options: ScanOptions = {},
   providers: ScanProviders = defaultProviders,
@@ -487,6 +539,12 @@ export async function runDailyScan(
     const avgCorr = averageCorrelationForTicker(item.ticker, returnsByTicker);
     const risk = reviewRisk(item.technical, item.fundamental, avgCorr);
     const fallbackRatio = coreFallbackRatio(item.fallbackEvents);
+    const dataCompleteness = evaluateDataCompleteness(
+      item.technical,
+      item.fundamental,
+      item.sentiment,
+      item.valuation,
+    );
     const isDegradedDataMode =
       hasFallback(item.fallbackEvents, 'fundamental') || hasFallback(item.fallbackEvents, 'valuation');
     let weightedInputs = {
@@ -566,6 +624,8 @@ export async function runDailyScan(
       action !== 'HOLD' && estimatedShares > 0 && !regionalMarketCheck.isTradeableInRegion;
     const suppressedByQualityGuard =
       fallbackRatio >= SIGNAL_CONFIG.quality.noSignalFallbackRatio;
+    const suppressedByDataGap =
+      dataCompleteness.status === 'fail' && dataCompleteness.missingCritical.length > 0;
     if (suppressedByQualityGuard) {
       item.fallbackEvents.push({
         component: 'quality_guard',
@@ -577,8 +637,22 @@ export async function runDailyScan(
         lastError: null,
       });
     }
+    if (suppressedByDataGap) {
+      item.fallbackEvents.push({
+        component: 'data_completeness',
+        fallbackUsed: true,
+        reason: `NO_SIGNAL_DATA_GAP: missing critical data [${dataCompleteness.missingCritical.join(', ')}]`,
+        retrySuggestion:
+          'Retry after market close, verify API quota/plan, and confirm ticker mapping on price + financial endpoints.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
     const finalAction =
-      suppressedByQualityGuard || shouldDowngradeToHold || shouldDowngradeForRegionalChecks
+      suppressedByQualityGuard ||
+      suppressedByDataGap ||
+      shouldDowngradeToHold ||
+      shouldDowngradeForRegionalChecks
         ? 'HOLD'
         : action;
     const delta = buildSignalDelta(
@@ -645,14 +719,19 @@ export async function runDailyScan(
 
     const payload: SignalPayload = {
       ticker: item.ticker,
-      action: suppressedByQualityGuard ? 'HOLD' : action,
-      confidence: suppressedByQualityGuard ? 0 : confidence,
+      action: suppressedByQualityGuard || suppressedByDataGap ? 'HOLD' : action,
+      confidence: suppressedByQualityGuard || suppressedByDataGap ? 0 : confidence,
       finalAction,
       qualityGuard: {
-        suppressed: suppressedByQualityGuard,
-        reason: suppressedByQualityGuard ? 'NO_SIGNAL: data quality too degraded' : null,
+        suppressed: suppressedByQualityGuard || suppressedByDataGap,
+        reason: suppressedByDataGap
+          ? `NO_SIGNAL_DATA_GAP: ${dataCompleteness.missingCritical.join(', ')}`
+          : suppressedByQualityGuard
+            ? 'NO_SIGNAL: data quality too degraded'
+            : null,
         fallbackRatio: roundTo(fallbackRatio, 4),
       },
+      dataCompleteness,
       delta,
       regionalMarketCheck,
       positionContext,

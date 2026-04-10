@@ -121,6 +121,13 @@ export interface PositionPerformance {
   notes: string[];
 }
 
+export interface DataCompleteness {
+  score: number;
+  status: 'pass' | 'warn' | 'fail';
+  missingCritical: string[];
+  notes: string[];
+}
+
 export interface SignalPayload {
   ticker: string;
   action: SignalAction;
@@ -131,6 +138,7 @@ export interface SignalPayload {
     reason: string | null;
     fallbackRatio: number;
   };
+  dataCompleteness: DataCompleteness;
   delta: SignalDelta;
   regionalMarketCheck: RegionalMarketCheck;
   positionContext: PositionContext;

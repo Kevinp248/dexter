@@ -1,6 +1,11 @@
 #!/usr/bin/env bun
 import { config } from 'dotenv';
 import { logger } from '../utils/logger.js';
+import {
+  getApiUsageSnapshot,
+  resetApiUsageCounters,
+  writeApiUsageReport,
+} from '../tools/finance/api.js';
 import { loadPreviousSignalsByTicker, saveLatestScan } from './history.js';
 import { runDailyScan } from './index.js';
 import { appendScanAlertsToPaperTradeLog } from './paper-trade-log.js';
@@ -132,6 +137,17 @@ function parseArgs(argv: string[]): ParsedCliArgs {
       }
       continue;
     }
+
+    if (arg === '--offline-replay') {
+      process.env.FINANCIAL_DATASETS_OFFLINE_REPLAY = '1';
+      continue;
+    }
+
+    if (arg === '--max-api-calls' && argv[i + 1]) {
+      process.env.FINANCIAL_DATASETS_MAX_CALLS_PER_RUN = argv[i + 1];
+      i += 1;
+      continue;
+    }
   }
 
   if (options.positions && Object.keys(options.positions).length === 0) {
@@ -142,6 +158,7 @@ function parseArgs(argv: string[]): ParsedCliArgs {
 }
 
 async function main() {
+  resetApiUsageCounters();
   const parsed = parseArgs(process.argv.slice(2));
   const cliOptions = parsed.scanOptions;
   const positionStateSnapshot = await loadPositionState();
@@ -167,6 +184,12 @@ async function main() {
       `Paper trade CSV update: appended ${appendResult.rowsAppended}, skipped ${appendResult.rowsSkipped} duplicate day/ticker row(s) at ${appendResult.path}`,
     );
   }
+  const usageLabel = `scan-${new Date().toISOString().slice(0, 10)}`;
+  const usagePath = writeApiUsageReport(usageLabel);
+  const usage = getApiUsageSnapshot();
+  logger.info(
+    `API usage this run: ${usage.totalCalls} calls. Report: ${usagePath}`,
+  );
   console.log(JSON.stringify(scan, null, 2));
 }
 

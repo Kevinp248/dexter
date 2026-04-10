@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { runFundamentalAnalysis } from '../agents/analysis/fundamentals.js';
 import { runSentimentAnalysis } from '../agents/analysis/sentiment.js';
 import { runTechnicalAnalysis } from '../agents/analysis/technical.js';
@@ -24,12 +25,31 @@ export interface TrialBacktestConfig {
   valuationRefreshDays: number;
   sentimentRefreshDays: number;
   dataQualityMaxFallbackRate: number;
-  signalProfile: 'baseline' | 'research' | 'adaptive';
+  signalProfile: 'baseline' | 'research' | 'adaptive' | 'ml_sidecar';
   adaptiveLookbackDays: number;
   adaptiveMinSamples: number;
   adaptiveBuyQuantile: number;
   adaptiveSellQuantile: number;
+  adaptiveEntryBuffer: number;
+  adaptiveCommitteeBuyRelief: number;
+  adaptiveBuyScoreFloor: number;
+  adaptiveAddScoreImprovementMin: number;
+  tacticalDipEnabled: boolean;
+  tacticalRsiMax: number;
+  tacticalZScoreMax: number;
+  tacticalTrendScoreMin: number;
+  tacticalMinRiskScore: number;
+  tacticalMaxAggregateScore: number;
+  tacticalMinEdgeAfterCostsBps: number;
+  exitStopLossPct: number;
+  exitTakeProfitPct: number;
+  exitMaxHoldTradingDays: number;
   adaptiveMinExpectedEdgeAfterCostsBps: number;
+  mlPredictionsCsvPath: string | null;
+  mlBuyProbabilityThreshold: number;
+  mlSellProbabilityThreshold: number;
+  mlMinRiskScore: number;
+  mlPositionScale: number;
 }
 
 export interface TrialBacktestDailyRecord {
@@ -108,6 +128,7 @@ type SignalSnapshot = {
   targetNotionalUsd: number;
   oneWayCostBps: number;
   expectedEdgeAfterCostsBps?: number;
+  mlProbabilityUp?: number | null;
   buyScoreThresholdUsed?: number;
   sellScoreThresholdUsed?: number;
   buyRiskThresholdUsed?: number;
@@ -143,9 +164,28 @@ const DEFAULT_CONFIG: TrialBacktestConfig = {
   signalProfile: 'adaptive',
   adaptiveLookbackDays: 30,
   adaptiveMinSamples: 10,
-  adaptiveBuyQuantile: 0.8,
+  adaptiveBuyQuantile: 0.78,
   adaptiveSellQuantile: 0.2,
-  adaptiveMinExpectedEdgeAfterCostsBps: 0,
+  adaptiveEntryBuffer: 0.015,
+  adaptiveCommitteeBuyRelief: 0.03,
+  adaptiveBuyScoreFloor: -0.14,
+  adaptiveAddScoreImprovementMin: 0.01,
+  tacticalDipEnabled: true,
+  tacticalRsiMax: 42,
+  tacticalZScoreMax: -0.9,
+  tacticalTrendScoreMin: -0.2,
+  tacticalMinRiskScore: 0.55,
+  tacticalMaxAggregateScore: 0.05,
+  tacticalMinEdgeAfterCostsBps: 8,
+  exitStopLossPct: 2.5,
+  exitTakeProfitPct: 4.5,
+  exitMaxHoldTradingDays: 7,
+  adaptiveMinExpectedEdgeAfterCostsBps: 20,
+  mlPredictionsCsvPath: null,
+  mlBuyProbabilityThreshold: 0.58,
+  mlSellProbabilityThreshold: 0.42,
+  mlMinRiskScore: 0.3,
+  mlPositionScale: 0.5,
 };
 
 function round2(value: number): number {
@@ -275,6 +315,30 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function parseMlProbabilities(csvPath: string | null): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!csvPath) return out;
+  try {
+    const raw = readFileSync(csvPath, 'utf8');
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    if (lines.length <= 1) return out;
+    const headers = lines[0].split(',');
+    const dateIdx = headers.indexOf('date');
+    const probIdx = headers.indexOf('p_up_blend');
+    if (dateIdx < 0 || probIdx < 0) return out;
+    for (let i = 1; i < lines.length; i += 1) {
+      const cols = lines[i].split(',');
+      if (cols.length <= Math.max(dateIdx, probIdx)) continue;
+      const date = cols[dateIdx]?.trim();
+      const prob = Number(cols[probIdx]);
+      if (date && Number.isFinite(prob)) out.set(date, prob);
+    }
+  } catch {
+    // Missing/invalid file -> leave map empty; profile falls back to deterministic.
+  }
+  return out;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -328,6 +392,20 @@ function adaptiveThresholds(
     sellScore: round4(sellScore),
     buyRisk: 0.25,
   };
+}
+
+function signalVoteFromComponentScore(
+  componentName: string,
+  score: number,
+): 'bullish' | 'bearish' | 'neutral' {
+  if (componentName === 'Sentiment') {
+    if (score >= 0.5) return 'bullish';
+    if (score <= -0.5) return 'bearish';
+    return 'neutral';
+  }
+  if (score >= 0.15) return 'bullish';
+  if (score <= -0.15) return 'bearish';
+  return 'neutral';
 }
 
 function analyzeDecisionBlockers(
@@ -424,6 +502,7 @@ function createDefaultRunSignalRunner(
   const fundamentalCache = new Map<string, ReturnType<typeof runFundamentalAnalysis>>();
   const sentimentCache = new Map<string, ReturnType<typeof runSentimentAnalysis>>();
   const valuationCache = new Map<string, ReturnType<typeof runValuationAnalysis>>();
+  const mlProbabilitiesByDate = parseMlProbabilities(config.mlPredictionsCsvPath);
   const scoreHistory: number[] = [];
   const fallbackHistory: boolean[] = [];
   const orderedBars = [...bars].sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
@@ -516,22 +595,86 @@ function createDefaultRunSignalRunner(
     const score = alert.reasoning.aggregateScore;
     const riskScore = alert.reasoning.risk.riskScore;
     const edgeAfterCosts = alert.executionPlan.costEstimate.expectedEdgeAfterCostsBps;
+    const mlProbabilityUp = mlProbabilitiesByDate.get(params.asOfDate) ?? null;
+    const technical = alert.reasoning.components.find((component) => component.name === 'Technical');
+    const technicalDetails = (technical?.details ?? {}) as Record<string, unknown>;
+    const subSignals = (technicalDetails.subSignals ?? {}) as Record<string, Record<string, unknown>>;
+    const trendSignal = String(subSignals.trend?.signal ?? 'neutral');
     const thresholdSet = adaptiveThresholds(scoreHistory, config);
     let buyScoreThreshold = SIGNAL_CONFIG.actions.buyScoreThreshold;
     let sellScoreThreshold = SIGNAL_CONFIG.actions.sellScoreThreshold;
     let buyRiskThreshold = SIGNAL_CONFIG.actions.buyRiskThreshold;
 
     if (config.signalProfile === 'adaptive') {
-      const entryBuffer = 0.015;
+      const entryBuffer = config.adaptiveEntryBuffer;
       buyScoreThreshold = thresholdSet.buyScore;
       sellScoreThreshold = thresholdSet.sellScore;
       buyRiskThreshold = thresholdSet.buyRisk;
-      if (score + entryBuffer >= buyScoreThreshold && riskScore >= buyRiskThreshold) {
+      const previousScore =
+        scoreHistory.length > 0 ? scoreHistory[scoreHistory.length - 1] : null;
+      const isAddOnBuy = params.shares > 0;
+      const addOnBuyAllowed =
+        !isAddOnBuy ||
+        (trendSignal !== 'bearish' &&
+          (previousScore === null ||
+            score >= previousScore + config.adaptiveAddScoreImprovementMin));
+      const components = alert.reasoning.components;
+      const votes = components.map((component) =>
+        signalVoteFromComponentScore(component.name, component.score),
+      );
+      const bullishVotes = votes.filter((vote) => vote === 'bullish').length;
+      const bearishVotes = votes.filter((vote) => vote === 'bearish').length;
+      // ai-hedge-fund style committee nudge: allow a slightly easier BUY when analyst votes are net bullish.
+      const hasCommitteeBuyBias = bullishVotes >= 2 && bearishVotes <= 1 && trendSignal !== 'bearish';
+      const committeeBuyThreshold = buyScoreThreshold - config.adaptiveCommitteeBuyRelief;
+      const meanReversionMetrics = (subSignals.meanReversion?.metrics ??
+        {}) as Record<string, unknown>;
+      const trendScore = Number(subSignals.trend?.score ?? 0);
+      const rsi14 = Number(meanReversionMetrics.rsi14 ?? Number.NaN);
+      const zScore = Number(meanReversionMetrics.zScore ?? Number.NaN);
+      const dipReboundBuyEligible =
+        config.tacticalDipEnabled &&
+        params.shares === 0 &&
+        score <= config.tacticalMaxAggregateScore &&
+        riskScore >= config.tacticalMinRiskScore &&
+        edgeAfterCosts >= config.tacticalMinEdgeAfterCostsBps &&
+        Number.isFinite(rsi14) &&
+        Number.isFinite(zScore) &&
+        rsi14 <= config.tacticalRsiMax &&
+        zScore <= config.tacticalZScoreMax &&
+        trendScore >= config.tacticalTrendScoreMin;
+      if (
+        (score >= config.adaptiveBuyScoreFloor || dipReboundBuyEligible) &&
+        (score + entryBuffer >= buyScoreThreshold ||
+          (hasCommitteeBuyBias && score + entryBuffer >= committeeBuyThreshold) ||
+          dipReboundBuyEligible) &&
+        addOnBuyAllowed &&
+        riskScore >= buyRiskThreshold
+      ) {
         finalAction = 'BUY';
       } else if (params.shares > 0 && score <= sellScoreThreshold) {
         finalAction = 'SELL';
       } else if (params.shares === 0 && score >= 0.02 && riskScore >= buyRiskThreshold) {
         finalAction = 'BUY';
+      } else {
+        finalAction = 'HOLD';
+      }
+    }
+
+    if (config.signalProfile === 'ml_sidecar' && mlProbabilityUp !== null) {
+      if (
+        mlProbabilityUp >= config.mlBuyProbabilityThreshold &&
+        riskScore >= config.mlMinRiskScore &&
+        edgeAfterCosts > 0 &&
+        (score >= 0 || trendSignal === 'bullish')
+      ) {
+        finalAction = 'BUY';
+      } else if (
+        params.shares > 0 &&
+        (mlProbabilityUp <= config.mlSellProbabilityThreshold ||
+          (score <= -0.15 && trendSignal === 'bearish'))
+      ) {
+        finalAction = 'SELL';
       } else {
         finalAction = 'HOLD';
       }
@@ -553,6 +696,9 @@ function createDefaultRunSignalRunner(
         alert.confidence,
         { longShares: params.shares, shortShares: 0 },
       );
+      if (config.signalProfile === 'ml_sidecar') {
+        targetNotionalUsd *= config.mlPositionScale;
+      }
     } else if (finalAction === 'SELL') {
       const mark = barsByDate.get(params.asOfDate)?.close ?? alert.positionPerformance.markPrice;
       targetNotionalUsd = params.shares * mark;
@@ -591,6 +737,7 @@ function createDefaultRunSignalRunner(
       targetNotionalUsd,
       oneWayCostBps: alert.executionPlan.costEstimate.oneWayCostBps,
       expectedEdgeAfterCostsBps: edgeAfterCosts,
+      mlProbabilityUp,
       buyScoreThresholdUsed: buyScoreThreshold,
       sellScoreThresholdUsed: sellScoreThreshold,
       buyRiskThresholdUsed: buyRiskThreshold,
@@ -651,6 +798,10 @@ export async function runTrialBacktest(
   const barsByDate = new Map(bars.map((bar) => [asDateOnly(bar.date), bar]));
   const tradingDates = bars.map((bar) => asDateOnly(bar.date));
   const calendarDates = enumerateCalendarDates(resolved.startDate, resolved.endDate);
+  const stopLossPct = resolved.exitStopLossPct ?? DEFAULT_CONFIG.exitStopLossPct;
+  const takeProfitPct = resolved.exitTakeProfitPct ?? DEFAULT_CONFIG.exitTakeProfitPct;
+  const maxHoldDays =
+    resolved.exitMaxHoldTradingDays ?? DEFAULT_CONFIG.exitMaxHoldTradingDays;
 
   let cashUsd = resolved.initialCapitalUsd;
   let shares = 0;
@@ -677,6 +828,8 @@ export async function runTrialBacktest(
 
   const dailyRecords: TrialBacktestDailyRecord[] = [];
   const executionRows: TrialExecutionRow[] = [];
+  let lastMarkClose: number | null = null;
+  let holdingTradingDays = 0;
 
   for (const date of calendarDates) {
     const bar = barsByDate.get(date);
@@ -774,6 +927,19 @@ export async function runTrialBacktest(
       const normalized = normalizeLongOnlyAction(signalSnapshot.finalAction, shares);
       normalizedAction = normalized.normalized;
       actionNote = normalized.note;
+      if (bar && shares > 0 && avgCostUsd > 0) {
+        const pnlPct = ((bar.close - avgCostUsd) / avgCostUsd) * 100;
+        if (pnlPct <= -stopLossPct) {
+          normalizedAction = 'SELL';
+          actionNote = `SELL forced by stop-loss (${pnlPct.toFixed(2)}%)`;
+        } else if (pnlPct >= takeProfitPct) {
+          normalizedAction = 'SELL';
+          actionNote = `SELL forced by take-profit (${pnlPct.toFixed(2)}%)`;
+        } else if (holdingTradingDays >= maxHoldDays) {
+          normalizedAction = 'SELL';
+          actionNote = `SELL forced by max-hold (${holdingTradingDays} trading days)`;
+        }
+      }
 
       const tradingIdx = tradingDates.indexOf(date);
       const nextTradingDate =
@@ -791,7 +957,10 @@ export async function runTrialBacktest(
       }
     }
 
-    const closePrice = bar ? round4(bar.close) : null;
+    const closePrice = bar ? round4(bar.close) : lastMarkClose;
+    if (bar) {
+      lastMarkClose = round4(bar.close);
+    }
     const positionValueUsd = closePrice === null ? 0 : shares * closePrice;
     const equityUsd = round4(cashUsd + positionValueUsd);
     peakEquity = Math.max(peakEquity, equityUsd);
@@ -822,6 +991,9 @@ export async function runTrialBacktest(
       fallbackUsed,
       ...diagnostics,
     });
+    if (bar) {
+      holdingTradingDays = shares > 0 ? holdingTradingDays + 1 : 0;
+    }
     prevEquity = equityUsd;
   }
 

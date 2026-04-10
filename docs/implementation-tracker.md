@@ -1,6 +1,6 @@
 # Implementation Tracker: Dexter-First Stock Signal System
 
-Last updated: 2026-04-09
+Last updated: 2026-04-10
 Owner: Codex + Kevin
 Branch: `feature-kevin-dexter`
 
@@ -79,11 +79,11 @@ Branch: `feature-kevin-dexter`
 
 ## Next Steps (Ordered)
 
-1. Add a proposal diff preview command (current config vs runtime overrides).
-2. Externalize trusted-source whitelist into a managed config file.
-3. Add ticker-level postmortem severity policy (warn-only vs temporary trade block).
-4. Add monthly report export combining weekly + quality + postmortem summaries.
-5. Add multi-ticker trial backtest portfolio mode after single-ticker validation.
+1. Add a separate tactical decision channel (entry/exit score) so valuation drag does not dominate short-horizon swing entries.
+2. Add a proposal diff preview command (current config vs runtime overrides).
+3. Externalize trusted-source whitelist into a managed config file.
+4. Add ticker-level postmortem severity policy (warn-only vs temporary trade block).
+5. Add monthly report export combining weekly + quality + postmortem summaries.
 
 ## Work Log
 
@@ -177,3 +177,52 @@ Branch: `feature-kevin-dexter`
   - Added trial backtest engine + CLI (`bun run backtest:trial`) with long-only, next-open execution policy.
   - Added JSON/CSV report artifacts under `.dexter/signal-engine/backtests/`.
   - Added deterministic tests for no-lookahead sequencing, long-only mapping, equity reconciliation, and 31-day January output.
+- 2026-04-10:
+  - Added external research findings note with links and implementation mapping: `docs/research-findings-aapl-reliability-2026-04-10.md`.
+- 2026-04-10:
+  - Added API call-budget enforcement and run-level usage reporting in financial API client (`FINANCIAL_DATASETS_MAX_CALLS_PER_RUN`, `FINANCIAL_DATASETS_MAX_CALLS_PER_ENDPOINT_PER_RUN`).
+  - Added offline replay guard (`FINANCIAL_DATASETS_OFFLINE_REPLAY=1`) to fail on cache miss instead of calling paid endpoints.
+  - Added AAPL-first point-in-time ML dataset builder CLI (`bun run ml:dataset`) with features, cost-aware labels, and cached provider usage.
+  - Added Python sidecar evaluator script (`scripts/ml/train_eval.py`) with TimeSeriesSplit + calibrated logistic + gradient boosting and strategy evaluation outputs.
+  - Added ML venv bootstrap script (`scripts/ml/setup_venv.sh`) and README usage examples.
+- 2026-04-10:
+  - Added `ml_sidecar` signal profile support in trial backtest (`--signal-profile ml_sidecar` + `--ml-predictions`).
+  - ML profile now consumes sidecar `p_up_blend` outputs while keeping risk/cost guardrails active.
+  - Ran Jan 2026 AAPL side-by-side comparison for baseline vs adaptive vs ml_sidecar.
+- 2026-04-10:
+  - Re-ran contiguous monthly OOS backtests for AAPL across Jan/Feb/Mar 2026 for `baseline`, `adaptive`, and `ml_sidecar`.
+  - Confirmed historical-cache/API budget controls are active during backtests (`--max-api-calls 250`).
+  - Published side-by-side monthly and Q1 summary in `docs/aapl-oos-jan-mar-2026.md`.
+  - Result: strategy remains overly conservative (mostly `HOLD`); `adaptive` remains best current base for targeted threshold tuning.
+- 2026-04-10:
+  - Implemented one focused adaptive tuning pass with 3 knobs (`adaptiveBuyQuantile`, `adaptiveCommitteeBuyRelief`, `adaptiveMinExpectedEdgeAfterCostsBps`).
+  - Added ai-hedge-fund-style component committee nudge for adaptive BUY gating in `src/signal-engine/backtest-trial.ts`.
+  - Re-ran AAPL Jan/Feb/Mar OOS window and documented before/after in `docs/aapl-oos-jan-mar-2026.md`.
+  - Outcome: Q1 loss improved (`-0.2036% -> -0.0938%`) and trade count increased (`2 -> 3`), but strategy remains not yet profitable.
+- 2026-04-10:
+  - Added data-completeness scoring per alert with explicit `pass/warn/fail` status and critical-missing fields.
+  - Added hard `NO_SIGNAL_DATA_GAP` suppression for critical gaps (price history, fundamental metrics, valuation core inputs).
+  - Added regression test coverage to ensure critical data gaps are flagged and suppressed deterministically.
+- 2026-04-10:
+  - Completed AAPL March 2026 trade postmortem and documented root causes in `docs/aapl-march-2026-trade-postmortem.md`.
+  - Identified main issue as adaptive BUY admission while aggregate score stayed negative, plus immediate pyramiding.
+  - Added next-step surgical remediation plan (buy floor, anti-pyramiding, weekend mark-to-market carry fix).
+- 2026-04-10:
+  - Implemented adaptive BUY floor + anti-pyramiding guardrails in `src/signal-engine/backtest-trial.ts`.
+  - Added CLI flags for new adaptive controls (`--adaptive-buy-score-floor`, `--adaptive-add-score-improvement-min`).
+  - Fixed weekend/non-trading mark-to-market carry in backtest daily accounting (uses last known close).
+  - Validation: `typecheck` + `backtest-trial` tests pass; weekend equity carry verified on forced-position scenario.
+- 2026-04-10:
+  - Ran focused 2-parameter calibration sweep for adaptive guardrails (`buy_score_floor`, `add_score_improvement_min`) across Jan/Feb/Mar 2026.
+  - Set calibrated default `adaptiveBuyScoreFloor` to `-0.14` (kept `adaptiveAddScoreImprovementMin=0.01`).
+  - Re-ran AAPL Jan/Feb/Mar OOS: adaptive improved to `-0.0577%` with 2 trades and no pyramiding in March.
+  - Updated results in `docs/aapl-oos-jan-mar-2026.md`.
+- 2026-04-10:
+  - Added blocker analytics module + CLI (`bun run review:blockers`) for monthly/overall HOLD blocker ranking from backtest artifacts.
+  - Added blocker analytics regression test and wired it into `test:signals`.
+  - Normalized NO_SIGNAL blocker strings so top-driver counts are actionable (not fragmented by numeric values).
+- 2026-04-10:
+  - Implemented tactical dip/rebound gate and lifecycle exits in adaptive backtest flow (stop-loss, take-profit, max-hold).
+  - Added CLI overrides for tactical thresholds and lifecycle controls.
+  - Calibrated tactical defaults (`tacticalZScoreMax=-0.9`) to avoid over-triggering while preserving earlier loss improvement.
+  - Re-ran AAPL Jan/Feb/Mar OOS: still `-0.0577%` with 2 trades; safer behavior, but profitability remains insufficient.

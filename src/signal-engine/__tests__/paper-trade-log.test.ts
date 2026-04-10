@@ -10,6 +10,12 @@ function makeAlert(overrides: Partial<SignalPayload> = {}): SignalPayload {
     action: 'HOLD',
     confidence: 29.05,
     finalAction: 'HOLD',
+    dataCompleteness: {
+      score: 0.92,
+      status: 'pass',
+      missingCritical: [],
+      notes: [],
+    },
     delta: {
       hasPrevious: true,
       previousGeneratedAt: '2026-04-09T07:00:00.000Z',

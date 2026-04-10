@@ -1,5 +1,5 @@
 import { api } from '../tools/finance/api.js';
-import { TTL_1H } from '../tools/finance/utils.js';
+import { TTL_15M, TTL_1H, TTL_24H } from '../tools/finance/utils.js';
 
 export interface PriceBar {
   date: string;
@@ -18,6 +18,13 @@ export interface MarketDataRange {
 
 function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
+}
+
+function isDateInPast(date?: string): boolean {
+  if (!date) return false;
+  const normalized = date.slice(0, 10);
+  const today = formatDate(new Date());
+  return normalized < today;
 }
 
 async function safeApi<T>(call: () => Promise<T>, fallback: T, label: string): Promise<T> {
@@ -64,6 +71,8 @@ export async function fetchHistoricalPrices(
     startDate.setDate(endDate.getDate() - intervalDays);
   }
 
+  const endDateStr = formatDate(endDate);
+  const isHistoricalWindow = isDateInPast(endDateStr);
   return safeApi(async () => {
     const { data } = await api.get(
       '/prices/',
@@ -71,9 +80,9 @@ export async function fetchHistoricalPrices(
         ticker: ticker.toUpperCase(),
         interval: 'day',
         start_date: formatDate(startDate),
-        end_date: formatDate(endDate),
+        end_date: endDateStr,
       },
-      { cacheable: true, ttlMs: TTL_1H },
+      { cacheable: true, ttlMs: isHistoricalWindow ? TTL_24H : TTL_1H },
     );
 
     const rawBars = Array.isArray(data.prices) ? data.prices : [];
@@ -97,12 +106,13 @@ export async function fetchKeyRatios(
   range: MarketDataRange = {},
 ): Promise<Record<string, unknown>> {
   const asOf = range.asOfDate ?? range.endDate;
+  const isHistoricalSnapshot = isDateInPast(asOf);
   return safeApi(async () => {
     const { data } = await api.get('/financial-metrics/snapshot/', {
       ticker: ticker.toUpperCase(),
       as_of: asOf,
       report_period_lte: asOf,
-    });
+    }, { cacheable: true, ttlMs: isHistoricalSnapshot ? TTL_24H : TTL_1H });
     return (data.snapshot as Record<string, unknown>) ?? {};
   }, {}, 'fetchKeyRatios');
 }
@@ -113,6 +123,7 @@ export async function fetchCashFlowStatements(
   range: MarketDataRange = {},
 ): Promise<Array<Record<string, unknown>>> {
   const asOf = range.asOfDate ?? range.endDate;
+  const isHistoricalSnapshot = isDateInPast(asOf);
   return safeApi(async () => {
     const { data } = await api.get('/financials/cash-flow-statements/', {
       ticker: ticker.toUpperCase(),
@@ -120,7 +131,7 @@ export async function fetchCashFlowStatements(
       limit,
       report_period_lte: asOf,
       as_of: asOf,
-    });
+    }, { cacheable: true, ttlMs: isHistoricalSnapshot ? TTL_24H : TTL_1H });
     return (data.cash_flow_statements as Array<Record<string, unknown>>) ?? [];
   }, [], 'fetchCashFlowStatements');
 }
@@ -131,6 +142,7 @@ export async function fetchIncomeStatements(
   range: MarketDataRange = {},
 ): Promise<Array<Record<string, unknown>>> {
   const asOf = range.asOfDate ?? range.endDate;
+  const isHistoricalSnapshot = isDateInPast(asOf);
   return safeApi(async () => {
     const { data } = await api.get('/financials/income-statements/', {
       ticker: ticker.toUpperCase(),
@@ -138,7 +150,7 @@ export async function fetchIncomeStatements(
       limit,
       report_period_lte: asOf,
       as_of: asOf,
-    });
+    }, { cacheable: true, ttlMs: isHistoricalSnapshot ? TTL_24H : TTL_1H });
     return (data.income_statements as Array<Record<string, unknown>>) ?? [];
   }, [], 'fetchIncomeStatements');
 }
@@ -149,13 +161,14 @@ export async function fetchCompanyNews(
   range: MarketDataRange = {},
 ): Promise<Array<{ title?: string; url?: string; published_at?: string }>> {
   const endDate = range.endDate ?? range.asOfDate;
+  const isHistoricalWindow = isDateInPast(endDate);
   return safeApi(async () => {
     const { data } = await api.get('/news', {
       ticker: ticker.toUpperCase(),
       limit: Math.min(limit, 10),
       end_date: endDate,
       start_date: range.startDate,
-    });
+    }, { cacheable: true, ttlMs: isHistoricalWindow ? TTL_24H : TTL_15M });
     return (data.news as Array<Record<string, unknown>>) ?? [];
   }, [], 'fetchCompanyNews');
 }

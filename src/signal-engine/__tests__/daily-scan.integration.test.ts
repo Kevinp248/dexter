@@ -195,6 +195,44 @@ describe('runDailyScan deterministic integration', () => {
     expect(scan.alerts[0].finalAction).toBe('HOLD');
   });
 
+  test('critical data gaps are marked as NO_SIGNAL_DATA_GAP', async () => {
+    const base = makeProviders(0.8, 0.7, 0.7, 0.3, 0.2);
+    const gapProviders: ScanProviders = {
+      ...base,
+      async runTechnicalAnalysis(ticker: string) {
+        const technical = await base.runTechnicalAnalysis(ticker);
+        return { ...technical, bars: [], returns: [] };
+      },
+      async runFundamentalAnalysis(ticker: string) {
+        const fundamental = await base.runFundamentalAnalysis(ticker);
+        return { ...fundamental, metrics: {} };
+      },
+      async runValuationAnalysis(ticker: string) {
+        const valuation = await base.runValuationAnalysis(ticker);
+        return {
+          ...valuation,
+          marketCap: 0,
+          methods: {
+            ...valuation.methods,
+            dcf: { ...valuation.methods.dcf, value: 0 },
+            ownerEarnings: { ...valuation.methods.ownerEarnings, value: 0 },
+            multiples: { ...valuation.methods.multiples, value: 0 },
+            residualIncome: { ...valuation.methods.residualIncome, value: 0 },
+          },
+        };
+      },
+    };
+
+    const scan = await runDailyScan({ tickers: ['AAPL'] }, gapProviders);
+    expect(scan.alerts).toHaveLength(1);
+    expect(scan.alerts[0].action).toBe('HOLD');
+    expect(scan.alerts[0].finalAction).toBe('HOLD');
+    expect(scan.alerts[0].qualityGuard?.suppressed).toBe(true);
+    expect(scan.alerts[0].qualityGuard?.reason).toContain('NO_SIGNAL_DATA_GAP');
+    expect(scan.alerts[0].dataCompleteness.status).toBe('fail');
+    expect(scan.alerts[0].dataCompleteness.missingCritical.length).toBeGreaterThan(0);
+  });
+
   test('snapshot: full output shape remains stable', async () => {
     const scan = await runDailyScan(
       {

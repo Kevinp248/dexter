@@ -6,6 +6,17 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
     {
       "action": "HOLD",
       "confidence": 41.75,
+      "dataCompleteness": {
+        "missingCritical": [],
+        "notes": [
+          "Technical bars: 30",
+          "Fundamental metrics present: 2",
+          "Valuation methods with valid value: 4",
+          "Sentiment signal count: 4",
+        ],
+        "score": 0.5125,
+        "status": "warn",
+      },
       "delta": {
         "actionChanged": false,
         "aggregateScoreChange": 0,

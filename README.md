@@ -193,14 +193,47 @@ bun run quality:signals
 Signal-quality guide:
 `docs/signal-quality-dashboard.md`
 
+ML sidecar guide:
+`docs/ml-sidecar-guide.md`
+
 Trial backtest (leakage-safe, next-open fills):
 ```bash
 bun run backtest:trial --ticker AAPL --start 2026-01-01 --end 2026-01-31 --capital 10000
 ```
 
+Backtest with reusable presets (easier cross-ticker evaluation):
+```bash
+bun run backtest:trial --preset adaptive-safe --ticker AAPL --start 2026-01-01 --end 2026-01-31
+bun run backtest:trial --preset adaptive-explore --ticker MSFT --start 2026-01-01 --end 2026-01-31
+```
+
+Backtest with strict API call budget and cache-only replay mode:
+```bash
+bun run backtest:trial --ticker AAPL --start 2026-01-01 --end 2026-01-31 --max-api-calls 200
+bun run backtest:trial --ticker AAPL --start 2026-01-01 --end 2026-01-31 --offline-replay
+```
+
 Output files:
 - `.dexter/signal-engine/backtests/trial-backtest-AAPL-2026-01-01-2026-01-31.json`
 - `.dexter/signal-engine/backtests/trial-backtest-AAPL-2026-01-01-2026-01-31.csv`
+- `.dexter/signal-engine/reports/api-usage-backtest-AAPL-2026-01-01-2026-01-31.json`
+
+Build ML training dataset (AAPL point-in-time features + labels):
+```bash
+bun run ml:dataset --ticker AAPL --start 2024-01-01 --end 2026-01-31 --max-api-calls 250
+```
+
+Run Python sidecar evaluator (scikit-learn):
+```bash
+scripts/ml/setup_venv.sh
+source .venv-ml/bin/activate
+bun run ml:sidecar --dataset .dexter/signal-engine/datasets/ml-dataset-AAPL-2024-01-01-2026-01-31.csv --target 1d --python .venv-ml/bin/python
+```
+
+Run backtest using ML sidecar probabilities (still gated by risk/cost rules):
+```bash
+bun run backtest:trial --ticker AAPL --start 2026-01-01 --end 2026-01-31 --signal-profile ml_sidecar --ml-predictions .dexter/signal-engine/ml/predictions-ml-dataset-AAPL-2026-01-01-2026-01-31-1d.csv
+```
 
 Auto-append scan output rows to paper-trade CSV:
 ```bash
@@ -215,6 +248,11 @@ bun run ops:daily --tickers AAPL,MSFT
 ```
 
 This runs scan + CSV logging + quick weekly/quality checks + plain-English next steps.
+
+HOLD blocker analytics (monthly + overall):
+```bash
+bun run review:blockers --ticker AAPL --profile adaptive --start 2026-01-01 --end 2026-03-31
+```
 
 Record real/paper fills to persistent ledger:
 ```bash
