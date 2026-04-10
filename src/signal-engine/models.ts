@@ -1,5 +1,6 @@
 import { RiskAssessment } from '../risk/risk.js';
 import { WatchlistEntry } from '../watchlists/watchlists.js';
+import { AnalysisContext } from '../agents/analysis/types.js';
 
 export type SignalAction = 'BUY' | 'SELL' | 'HOLD' | 'COVER';
 
@@ -23,9 +24,21 @@ export interface PositionContext {
   shortShares: number;
 }
 
+export interface PositionStateInput {
+  longShares: number;
+  shortShares: number;
+  longCostBasis: number;
+  shortCostBasis: number;
+  realizedPnlUsd: number;
+  totalFeesUsd: number;
+  lastTradeAt: string | null;
+}
+
 export interface ScanOptions {
   tickers?: string[];
+  analysisContext?: AnalysisContext;
   positions?: Record<string, PositionContext>;
+  positionStatesByTicker?: Record<string, PositionStateInput>;
   portfolioValue?: number;
   previousSignalsByTicker?: Record<string, PreviousSignalSnapshot>;
   executionConfig?: {
@@ -90,14 +103,46 @@ export interface SignalDelta {
   topDrivers: string[];
 }
 
+export interface PositionPerformance {
+  hasOpenPosition: boolean;
+  isCostBasisAvailable: boolean;
+  markPrice: number;
+  longShares: number;
+  shortShares: number;
+  longCostBasis: number | null;
+  shortCostBasis: number | null;
+  longMarketValueUsd: number;
+  shortMarketValueUsd: number;
+  netExposureUsd: number;
+  unrealizedPnlUsd: number | null;
+  unrealizedPnlPct: number | null;
+  realizedPnlUsd: number | null;
+  totalPnlUsd: number | null;
+  notes: string[];
+}
+
+export interface DataCompleteness {
+  score: number;
+  status: 'pass' | 'warn' | 'fail';
+  missingCritical: string[];
+  notes: string[];
+}
+
 export interface SignalPayload {
   ticker: string;
   action: SignalAction;
   confidence: number;
   finalAction: SignalAction;
+  qualityGuard?: {
+    suppressed: boolean;
+    reason: string | null;
+    fallbackRatio: number;
+  };
+  dataCompleteness: DataCompleteness;
   delta: SignalDelta;
   regionalMarketCheck: RegionalMarketCheck;
   positionContext: PositionContext;
+  positionPerformance: PositionPerformance;
   executionPlan: ExecutionPlan;
   fallbackPolicy: {
     hadFallback: boolean;

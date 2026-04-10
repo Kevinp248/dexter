@@ -13,8 +13,11 @@ import {
 import { evaluatePortfolioConstraints } from './portfolio-constraints.js';
 import { deriveConfidence, resolveAction } from './rules.js';
 import {
+  DataCompleteness,
   ExecutionPlan,
   FallbackEvent,
+  PositionPerformance,
+  PositionStateInput,
   PreviousSignalSnapshot,
   PositionContext,
   RegionalMarketCheck,
@@ -24,12 +27,25 @@ import {
   SignalPayload,
 } from './models.js';
 import { evaluateRegionalMarketCheck } from './regional-checks.js';
+import { AnalysisContext } from '../agents/analysis/types.js';
 
 export interface ScanProviders {
-  runTechnicalAnalysis: typeof runTechnicalAnalysis;
-  runFundamentalAnalysis: typeof runFundamentalAnalysis;
-  runSentimentAnalysis: typeof runSentimentAnalysis;
-  runValuationAnalysis: typeof runValuationAnalysis;
+  runTechnicalAnalysis: (
+    ticker: string,
+    context?: AnalysisContext,
+  ) => ReturnType<typeof runTechnicalAnalysis>;
+  runFundamentalAnalysis: (
+    ticker: string,
+    context?: AnalysisContext,
+  ) => ReturnType<typeof runFundamentalAnalysis>;
+  runSentimentAnalysis: (
+    ticker: string,
+    context?: AnalysisContext,
+  ) => ReturnType<typeof runSentimentAnalysis>;
+  runValuationAnalysis: (
+    ticker: string,
+    context?: AnalysisContext,
+  ) => ReturnType<typeof runValuationAnalysis>;
 }
 
 const defaultProviders: ScanProviders = {
@@ -41,6 +57,10 @@ const defaultProviders: ScanProviders = {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function roundTo(value: number, digits: number): number {
+  return Number(value.toFixed(digits));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -147,6 +167,96 @@ function estimatePriceFromTechnical(
   return SIGNAL_CONFIG.execution.fallbackEstimatedPrice;
 }
 
+function buildPositionPerformance(
+  markPrice: number,
+  position: PositionContext,
+  positionState: PositionStateInput | undefined,
+): PositionPerformance {
+  const hasOpenPosition = position.longShares > 0 || position.shortShares > 0;
+  const isCostBasisAvailable = Boolean(positionState);
+  const longCostBasis =
+    positionState && position.longShares > 0 ? positionState.longCostBasis : null;
+  const shortCostBasis =
+    positionState && position.shortShares > 0 ? positionState.shortCostBasis : null;
+
+  const longMarketValueUsd = position.longShares * markPrice;
+  const shortMarketValueUsd = position.shortShares * markPrice;
+  const netExposureUsd = longMarketValueUsd - shortMarketValueUsd;
+
+  if (!hasOpenPosition) {
+    return {
+      hasOpenPosition,
+      isCostBasisAvailable,
+      markPrice: roundTo(markPrice, 2),
+      longShares: position.longShares,
+      shortShares: position.shortShares,
+      longCostBasis,
+      shortCostBasis,
+      longMarketValueUsd: roundTo(longMarketValueUsd, 2),
+      shortMarketValueUsd: roundTo(shortMarketValueUsd, 2),
+      netExposureUsd: roundTo(netExposureUsd, 2),
+      unrealizedPnlUsd: 0,
+      unrealizedPnlPct: 0,
+      realizedPnlUsd: roundTo(positionState?.realizedPnlUsd ?? 0, 2),
+      totalPnlUsd: roundTo(positionState?.realizedPnlUsd ?? 0, 2),
+      notes: ['No open position'],
+    };
+  }
+
+  if (!positionState) {
+    return {
+      hasOpenPosition,
+      isCostBasisAvailable,
+      markPrice: roundTo(markPrice, 2),
+      longShares: position.longShares,
+      shortShares: position.shortShares,
+      longCostBasis,
+      shortCostBasis,
+      longMarketValueUsd: roundTo(longMarketValueUsd, 2),
+      shortMarketValueUsd: roundTo(shortMarketValueUsd, 2),
+      netExposureUsd: roundTo(netExposureUsd, 2),
+      unrealizedPnlUsd: null,
+      unrealizedPnlPct: null,
+      realizedPnlUsd: null,
+      totalPnlUsd: null,
+      notes: ['Missing cost basis in stored position ledger'],
+    };
+  }
+
+  const longUnrealized =
+    position.longShares > 0 ? (markPrice - positionState.longCostBasis) * position.longShares : 0;
+  const shortUnrealized =
+    position.shortShares > 0
+      ? (positionState.shortCostBasis - markPrice) * position.shortShares
+      : 0;
+  const unrealizedPnlUsd = longUnrealized + shortUnrealized;
+  const grossCostBasis =
+    positionState.longCostBasis * position.longShares +
+    positionState.shortCostBasis * position.shortShares;
+  const unrealizedPnlPct =
+    grossCostBasis > 0 ? (unrealizedPnlUsd / grossCostBasis) * 100 : null;
+  const realizedPnlUsd = positionState.realizedPnlUsd;
+  const totalPnlUsd = realizedPnlUsd + unrealizedPnlUsd;
+
+  return {
+    hasOpenPosition,
+    isCostBasisAvailable,
+    markPrice: roundTo(markPrice, 2),
+    longShares: position.longShares,
+    shortShares: position.shortShares,
+    longCostBasis: longCostBasis === null ? null : roundTo(longCostBasis, 4),
+    shortCostBasis: shortCostBasis === null ? null : roundTo(shortCostBasis, 4),
+    longMarketValueUsd: roundTo(longMarketValueUsd, 2),
+    shortMarketValueUsd: roundTo(shortMarketValueUsd, 2),
+    netExposureUsd: roundTo(netExposureUsd, 2),
+    unrealizedPnlUsd: roundTo(unrealizedPnlUsd, 2),
+    unrealizedPnlPct: unrealizedPnlPct === null ? null : roundTo(unrealizedPnlPct, 4),
+    realizedPnlUsd: roundTo(realizedPnlUsd, 2),
+    totalPnlUsd: roundTo(totalPnlUsd, 2),
+    notes: [],
+  };
+}
+
 function buildSignalDelta(
   previous: PreviousSignalSnapshot | undefined,
   action: SignalPayload['action'],
@@ -200,6 +310,16 @@ type InterimAnalysis = {
   fallbackEvents: FallbackEvent[];
 };
 
+function hasFallback(events: FallbackEvent[], component: string): boolean {
+  return events.some((event) => event.component === component && event.fallbackUsed);
+}
+
+function coreFallbackRatio(events: FallbackEvent[]): number {
+  const core = ['technical', 'fundamental', 'sentiment', 'valuation'];
+  const failed = core.filter((component) => hasFallback(events, component)).length;
+  return failed / core.length;
+}
+
 function detectDataFallbacks(
   ticker: string,
   technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>,
@@ -247,6 +367,57 @@ function detectDataFallbacks(
   return events;
 }
 
+function evaluateDataCompleteness(
+  technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>,
+  fundamental: Awaited<ReturnType<typeof runFundamentalAnalysis>>,
+  sentiment: Awaited<ReturnType<typeof runSentimentAnalysis>>,
+  valuation: Awaited<ReturnType<typeof runValuationAnalysis>>,
+): DataCompleteness {
+  const barsCount = technical.bars.length;
+  const technicalScore = clamp(barsCount / 120, 0, 1);
+  const fundamentalMetricCount = Object.values(fundamental.metrics).filter(
+    (value) => value !== undefined,
+  ).length;
+  const fundamentalScore = clamp(fundamentalMetricCount / 8, 0, 1);
+  const valuationMethodCount = Object.values(valuation.methods).filter(
+    (method) => Number.isFinite(method.value) && method.value > 0,
+  ).length;
+  const valuationScore =
+    valuation.marketCap > 0 ? clamp(valuationMethodCount / 4, 0, 1) : 0;
+  const sentimentSignals = sentiment.positive + sentiment.negative;
+  const sentimentScore = sentimentSignals > 0 ? 1 : 0.5;
+
+  const score = roundTo(
+    technicalScore * 0.35 +
+      fundamentalScore * 0.3 +
+      valuationScore * 0.3 +
+      sentimentScore * 0.05,
+    4,
+  );
+  const missingCritical: string[] = [];
+  if (barsCount < 20) missingCritical.push('technical.price_history');
+  if (fundamentalMetricCount === 0) missingCritical.push('fundamental.metrics');
+  if (valuation.marketCap <= 0 || valuationMethodCount === 0) {
+    missingCritical.push('valuation.core_inputs');
+  }
+
+  const notes = [
+    `Technical bars: ${barsCount}`,
+    `Fundamental metrics present: ${fundamentalMetricCount}`,
+    `Valuation methods with valid value: ${valuationMethodCount}`,
+    `Sentiment signal count: ${sentimentSignals}`,
+  ];
+  const status: DataCompleteness['status'] =
+    missingCritical.length > 0 ? 'fail' : score < 0.8 ? 'warn' : 'pass';
+
+  return {
+    score,
+    status,
+    missingCritical,
+    notes,
+  };
+}
+
 export async function runDailyScan(
   options: ScanOptions = {},
   providers: ScanProviders = defaultProviders,
@@ -260,7 +431,7 @@ export async function runDailyScan(
     const [technicalResult, fundamentalResult, sentimentResult, valuationResult] =
       await Promise.all([
         runWithRetryAndFallback(
-        () => providers.runTechnicalAnalysis(entry.ticker),
+        () => providers.runTechnicalAnalysis(entry.ticker, options.analysisContext),
         {
           ticker: entry.ticker,
           score: 0,
@@ -282,7 +453,7 @@ export async function runDailyScan(
         'Retry in 5-10 minutes. If still failing, validate historical price endpoint and symbol format.',
       ),
         runWithRetryAndFallback(
-        () => providers.runFundamentalAnalysis(entry.ticker),
+        () => providers.runFundamentalAnalysis(entry.ticker, options.analysisContext),
         {
           ticker: entry.ticker,
           score: 0,
@@ -301,7 +472,7 @@ export async function runDailyScan(
         'Retry after data provider refresh; verify financial-metrics snapshot availability for the ticker.',
       ),
         runWithRetryAndFallback(
-        () => providers.runSentimentAnalysis(entry.ticker),
+        () => providers.runSentimentAnalysis(entry.ticker, options.analysisContext),
         {
           ticker: entry.ticker,
           score: 0,
@@ -313,7 +484,7 @@ export async function runDailyScan(
         'Retry after 15 minutes; if still empty, treat sentiment as low-priority and use other components.',
       ),
         runWithRetryAndFallback(
-        () => providers.runValuationAnalysis(entry.ticker),
+        () => providers.runValuationAnalysis(entry.ticker, options.analysisContext),
         {
           ticker: entry.ticker,
           score: 0,
@@ -367,12 +538,38 @@ export async function runDailyScan(
 
     const avgCorr = averageCorrelationForTicker(item.ticker, returnsByTicker);
     const risk = reviewRisk(item.technical, item.fundamental, avgCorr);
-    const weightedInputs = {
+    const fallbackRatio = coreFallbackRatio(item.fallbackEvents);
+    const dataCompleteness = evaluateDataCompleteness(
+      item.technical,
+      item.fundamental,
+      item.sentiment,
+      item.valuation,
+    );
+    const isDegradedDataMode =
+      hasFallback(item.fallbackEvents, 'fundamental') || hasFallback(item.fallbackEvents, 'valuation');
+    let weightedInputs = {
       technical: item.technical.score * SIGNAL_CONFIG.aggregateWeights.technical,
       fundamentals: item.fundamental.score * SIGNAL_CONFIG.aggregateWeights.fundamentals,
       valuation: item.valuation.score * SIGNAL_CONFIG.aggregateWeights.valuation,
       sentiment: item.sentiment.score * SIGNAL_CONFIG.aggregateWeights.sentiment,
     };
+    if (isDegradedDataMode) {
+      weightedInputs = {
+        technical: item.technical.score * 0.8,
+        fundamentals: 0,
+        valuation: 0,
+        sentiment: item.sentiment.score * 0.2,
+      };
+      item.fallbackEvents.push({
+        component: 'degraded_mode',
+        fallbackUsed: true,
+        reason: 'Fundamental/valuation coverage degraded; switched to technical+sentiment fallback.',
+        retrySuggestion:
+          'Restore paid data coverage or switch provider for financial statements/market-cap endpoints.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
     const aggregateScore = clamp(
       weightedInputs.technical +
         weightedInputs.fundamentals +
@@ -383,7 +580,10 @@ export async function runDailyScan(
     );
     const positionContext = getPositionContext(item.ticker, options.positions);
     const action = resolveAction(aggregateScore, risk, positionContext);
-    const confidence = deriveConfidence(aggregateScore, risk);
+    const baseConfidence = deriveConfidence(aggregateScore, risk);
+    const confidence = isDegradedDataMode
+      ? roundTo(baseConfidence * SIGNAL_CONFIG.confidence.degradedDataPenalty, 4)
+      : baseConfidence;
     const estimatedPrice = estimatePriceFromTechnical(item.technical);
     const targetNotional = estimateTargetNotionalUsd(
       action,
@@ -422,8 +622,39 @@ export async function runDailyScan(
     );
     const shouldDowngradeForRegionalChecks =
       action !== 'HOLD' && estimatedShares > 0 && !regionalMarketCheck.isTradeableInRegion;
+    const suppressedByQualityGuard =
+      fallbackRatio >= SIGNAL_CONFIG.quality.noSignalFallbackRatio;
+    const suppressedByDataGap =
+      dataCompleteness.status === 'fail' && dataCompleteness.missingCritical.length > 0;
+    if (suppressedByQualityGuard) {
+      item.fallbackEvents.push({
+        component: 'quality_guard',
+        fallbackUsed: true,
+        reason: `Fallback ratio ${(fallbackRatio * 100).toFixed(1)}% exceeded NO_SIGNAL guard.`,
+        retrySuggestion:
+          'Do not trade this signal yet. Retry after fixing provider coverage and rerun scan.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
+    if (suppressedByDataGap) {
+      item.fallbackEvents.push({
+        component: 'data_completeness',
+        fallbackUsed: true,
+        reason: `NO_SIGNAL_DATA_GAP: missing critical data [${dataCompleteness.missingCritical.join(', ')}]`,
+        retrySuggestion:
+          'Retry after market close, verify API quota/plan, and confirm ticker mapping on price + financial endpoints.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
     const finalAction =
-      shouldDowngradeToHold || shouldDowngradeForRegionalChecks ? 'HOLD' : action;
+      suppressedByQualityGuard ||
+      suppressedByDataGap ||
+      shouldDowngradeToHold ||
+      shouldDowngradeForRegionalChecks
+        ? 'HOLD'
+        : action;
     const delta = buildSignalDelta(
       options.previousSignalsByTicker?.[item.ticker],
       action,
@@ -439,6 +670,11 @@ export async function runDailyScan(
       costEstimate,
       constraints,
     };
+    const positionPerformance = buildPositionPerformance(
+      estimatedPrice,
+      positionContext,
+      options.positionStatesByTicker?.[item.ticker],
+    );
 
     const components: SignalComponent[] = [
       {
@@ -483,12 +719,23 @@ export async function runDailyScan(
 
     const payload: SignalPayload = {
       ticker: item.ticker,
-      action,
-      confidence,
+      action: suppressedByQualityGuard || suppressedByDataGap ? 'HOLD' : action,
+      confidence: suppressedByQualityGuard || suppressedByDataGap ? 0 : confidence,
       finalAction,
+      qualityGuard: {
+        suppressed: suppressedByQualityGuard || suppressedByDataGap,
+        reason: suppressedByDataGap
+          ? `NO_SIGNAL_DATA_GAP: ${dataCompleteness.missingCritical.join(', ')}`
+          : suppressedByQualityGuard
+            ? 'NO_SIGNAL: data quality too degraded'
+            : null,
+        fallbackRatio: roundTo(fallbackRatio, 4),
+      },
+      dataCompleteness,
       delta,
       regionalMarketCheck,
       positionContext,
+      positionPerformance,
       executionPlan,
       fallbackPolicy: {
         hadFallback: item.fallbackEvents.some((event) => event.fallbackUsed),

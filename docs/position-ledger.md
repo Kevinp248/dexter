@@ -7,6 +7,7 @@ Last updated: 2026-04-09
 - Stores every manual/paper fill in an append-only ledger.
 - Rebuilds deterministic position state (long/short shares, cost basis, realized P&L).
 - Lets daily scan auto-load current positions on the next run.
+- Enables per-alert mark-to-market P&L output in `positionPerformance`.
 
 ## Files
 
@@ -19,6 +20,18 @@ Record a fill:
 
 ```bash
 bun run trade:ledger record --ticker AAPL --side BUY --qty 10 --price 200 --fee 1
+```
+
+Record another stock fill (example):
+
+```bash
+bun run trade:ledger record --ticker MSFT --side BUY --qty 5 --price 410 --fee 1
+```
+
+Sell part/all of a position:
+
+```bash
+bun run trade:ledger record --ticker AAPL --side SELL --qty 10 --price 260 --fee 1
 ```
 
 Show current positions:

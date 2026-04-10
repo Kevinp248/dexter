@@ -195,6 +195,44 @@ describe('runDailyScan deterministic integration', () => {
     expect(scan.alerts[0].finalAction).toBe('HOLD');
   });
 
+  test('critical data gaps are marked as NO_SIGNAL_DATA_GAP', async () => {
+    const base = makeProviders(0.8, 0.7, 0.7, 0.3, 0.2);
+    const gapProviders: ScanProviders = {
+      ...base,
+      async runTechnicalAnalysis(ticker: string) {
+        const technical = await base.runTechnicalAnalysis(ticker);
+        return { ...technical, bars: [], returns: [] };
+      },
+      async runFundamentalAnalysis(ticker: string) {
+        const fundamental = await base.runFundamentalAnalysis(ticker);
+        return { ...fundamental, metrics: {} };
+      },
+      async runValuationAnalysis(ticker: string) {
+        const valuation = await base.runValuationAnalysis(ticker);
+        return {
+          ...valuation,
+          marketCap: 0,
+          methods: {
+            ...valuation.methods,
+            dcf: { ...valuation.methods.dcf, value: 0 },
+            ownerEarnings: { ...valuation.methods.ownerEarnings, value: 0 },
+            multiples: { ...valuation.methods.multiples, value: 0 },
+            residualIncome: { ...valuation.methods.residualIncome, value: 0 },
+          },
+        };
+      },
+    };
+
+    const scan = await runDailyScan({ tickers: ['AAPL'] }, gapProviders);
+    expect(scan.alerts).toHaveLength(1);
+    expect(scan.alerts[0].action).toBe('HOLD');
+    expect(scan.alerts[0].finalAction).toBe('HOLD');
+    expect(scan.alerts[0].qualityGuard?.suppressed).toBe(true);
+    expect(scan.alerts[0].qualityGuard?.reason).toContain('NO_SIGNAL_DATA_GAP');
+    expect(scan.alerts[0].dataCompleteness.status).toBe('fail');
+    expect(scan.alerts[0].dataCompleteness.missingCritical.length).toBeGreaterThan(0);
+  });
+
   test('snapshot: full output shape remains stable', async () => {
     const scan = await runDailyScan(
       {
@@ -265,5 +303,39 @@ describe('runDailyScan deterministic integration', () => {
     expect(fundamentalEvent?.retrySuggestion).toContain('Retry');
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-01-02T00:00:00.000Z'));
+  });
+
+  test('position performance includes mark-to-market PnL when cost basis is available', async () => {
+    const scan = await runDailyScan(
+      {
+        tickers: ['AAPL'],
+        positions: {
+          AAPL: {
+            longShares: 10,
+            shortShares: 0,
+          },
+        },
+        positionStatesByTicker: {
+          AAPL: {
+            longShares: 10,
+            shortShares: 0,
+            longCostBasis: 95,
+            shortCostBasis: 0,
+            realizedPnlUsd: 12.5,
+            totalFeesUsd: 1,
+            lastTradeAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      },
+      makeProviders(0.6, 0.6, 0.6, 0.3, 0.18),
+    );
+
+    expect(scan.alerts).toHaveLength(1);
+    const perf = scan.alerts[0].positionPerformance;
+    expect(perf.hasOpenPosition).toBe(true);
+    expect(perf.isCostBasisAvailable).toBe(true);
+    expect(perf.unrealizedPnlUsd).toBe(50);
+    expect(perf.realizedPnlUsd).toBe(12.5);
+    expect(perf.totalPnlUsd).toBe(62.5);
   });
 });

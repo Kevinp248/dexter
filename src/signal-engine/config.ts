@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 export interface SignalEngineConfig {
   version: string;
   aggregateWeights: {
@@ -17,6 +20,7 @@ export interface SignalEngineConfig {
   confidence: {
     scoreWeight: number;
     riskWeight: number;
+    degradedDataPenalty: number;
   };
   technical: {
     trendWeight: number;
@@ -139,9 +143,12 @@ export interface SignalEngineConfig {
       minHistoryBars: number;
     };
   };
+  quality: {
+    noSignalFallbackRatio: number;
+  };
 }
 
-export const SIGNAL_CONFIG: SignalEngineConfig = {
+const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
   version: '1.0.0',
   aggregateWeights: {
     technical: 0.3,
@@ -160,6 +167,7 @@ export const SIGNAL_CONFIG: SignalEngineConfig = {
   confidence: {
     scoreWeight: 70,
     riskWeight: 30,
+    degradedDataPenalty: 0.65,
   },
   technical: {
     trendWeight: 0.25,
@@ -282,4 +290,54 @@ export const SIGNAL_CONFIG: SignalEngineConfig = {
       minHistoryBars: 20,
     },
   },
+  quality: {
+    noSignalFallbackRatio: 0.5,
+  },
 };
+
+function applyConfigOverrides(
+  baseConfig: SignalEngineConfig,
+  overrides: Record<string, unknown>,
+): SignalEngineConfig {
+  const merged = JSON.parse(JSON.stringify(baseConfig)) as Record<string, unknown>;
+
+  const assign = (target: Record<string, unknown>, source: Record<string, unknown>): void => {
+    for (const [key, value] of Object.entries(source)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const next = target[key];
+        const nextObj =
+          next && typeof next === 'object' && !Array.isArray(next)
+            ? (next as Record<string, unknown>)
+            : {};
+        target[key] = nextObj;
+        assign(nextObj, value as Record<string, unknown>);
+        continue;
+      }
+      if (typeof value === 'number') {
+        target[key] = value;
+      }
+    }
+  };
+
+  assign(merged, overrides);
+  return merged as unknown as SignalEngineConfig;
+}
+
+function loadRuntimeOverrides(): Record<string, unknown> {
+  const target = path.join(process.cwd(), '.dexter', 'signal-engine', 'config-overrides.json');
+  try {
+    const raw = readFileSync(target, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // No overrides configured.
+  }
+  return {};
+}
+
+export const SIGNAL_CONFIG: SignalEngineConfig = applyConfigOverrides(
+  BASE_SIGNAL_CONFIG,
+  loadRuntimeOverrides(),
+);

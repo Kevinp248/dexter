@@ -4,6 +4,9 @@ Last updated: 2026-04-09
 
 Use this once per week to audit signal quality and your manual decisions.
 
+For detailed hit-rate diagnostics by confidence bucket, run:
+- `bun run quality:signals`
+
 ## 1) Keep paper-trade log current
 
 - Store your CSV at:

@@ -6,6 +6,17 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
     {
       "action": "HOLD",
       "confidence": 41.75,
+      "dataCompleteness": {
+        "missingCritical": [],
+        "notes": [
+          "Technical bars: 30",
+          "Fundamental metrics present: 2",
+          "Valuation methods with valid value: 4",
+          "Sentiment signal count: 4",
+        ],
+        "score": 0.5125,
+        "status": "warn",
+      },
       "delta": {
         "actionChanged": false,
         "aggregateScoreChange": 0,
@@ -79,6 +90,30 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
       "positionContext": {
         "longShares": 0,
         "shortShares": 0,
+      },
+      "positionPerformance": {
+        "hasOpenPosition": false,
+        "isCostBasisAvailable": false,
+        "longCostBasis": null,
+        "longMarketValueUsd": 0,
+        "longShares": 0,
+        "markPrice": 100,
+        "netExposureUsd": 0,
+        "notes": [
+          "No open position",
+        ],
+        "realizedPnlUsd": 0,
+        "shortCostBasis": null,
+        "shortMarketValueUsd": 0,
+        "shortShares": 0,
+        "totalPnlUsd": 0,
+        "unrealizedPnlPct": 0,
+        "unrealizedPnlUsd": 0,
+      },
+      "qualityGuard": {
+        "fallbackRatio": 0,
+        "reason": null,
+        "suppressed": false,
       },
       "reasoning": {
         "aggregateScore": 0.275,

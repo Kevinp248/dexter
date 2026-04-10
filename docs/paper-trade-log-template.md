@@ -3,13 +3,15 @@
 Use this after each scan and manual decision.
 For fill-level position tracking, also log each fill through:
 - `bun run trade:ledger record ...`
+For automatic scan-row logging:
+- `bun run scan:daily:log --tickers ...`
 
 Recommended file path for weekly review script:
 - `.dexter/signal-engine/paper-trade-log.csv`
 
 CSV header (copy/paste as first row):
 ```csv
-Date,Ticker,action,finalAction,Decision,Direction,Entry Price,Position Size (shares),Notional,Cost Estimate (USD),Key Delta Drivers,Risk Checks,Reason for Override,Exit Date,Exit Price,Result (%),Fallback Had Fallback,Fallback Reason,Fallback Retry Suggestion,Notes / Lessons
+Date,Ticker,action,finalAction,Confidence,Decision,Direction,Entry Price,Position Size (shares),Notional,Cost Estimate (USD),Key Delta Drivers,Risk Checks,Reason for Override,Exit Date,Exit Price,Result (%),Fallback Had Fallback,Fallback Reason,Fallback Retry Suggestion,Notes / Lessons
 ```
 
 ## Trade Log Columns
@@ -18,6 +20,7 @@ Date,Ticker,action,finalAction,Decision,Direction,Entry Price,Position Size (sha
 - Ticker
 - Signal `action`
 - Signal `finalAction`
+- Signal `Confidence` (0-100, from scan output)
 - Your Decision (`trade` / `skip`)
 - Direction (`long` / `exit long` / `cover short` / `none`)
 - Entry Price

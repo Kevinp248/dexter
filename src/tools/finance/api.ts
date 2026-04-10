@@ -1,11 +1,113 @@
 import { readCache, writeCache, describeRequest } from '../../utils/cache.js';
 import { logger } from '../../utils/logger.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { dexterPath } from '../../utils/paths.js';
 
 const BASE_URL = 'https://api.financialdatasets.ai';
 
 export interface ApiResponse {
   data: Record<string, unknown>;
   url: string;
+}
+
+type ApiUsageCounter = {
+  endpoint: string;
+  calls: number;
+};
+
+type ApiUsageState = {
+  totalCalls: number;
+  perEndpoint: Map<string, number>;
+};
+
+const apiUsageState: ApiUsageState = {
+  totalCalls: 0,
+  perEndpoint: new Map<string, number>(),
+};
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function getMaxCallsPerRun(): number {
+  return parsePositiveInt(process.env.FINANCIAL_DATASETS_MAX_CALLS_PER_RUN, 500);
+}
+
+function getMaxCallsPerEndpointPerRun(): number {
+  return parsePositiveInt(process.env.FINANCIAL_DATASETS_MAX_CALLS_PER_ENDPOINT_PER_RUN, 250);
+}
+
+function offlineReplayEnabled(): boolean {
+  const value = (process.env.FINANCIAL_DATASETS_OFFLINE_REPLAY ?? '').trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes';
+}
+
+function incrementUsage(endpoint: string): void {
+  const normalized = endpoint.split('?')[0];
+  const totalLimit = getMaxCallsPerRun();
+  const perEndpointLimit = getMaxCallsPerEndpointPerRun();
+  const endpointCalls = (apiUsageState.perEndpoint.get(normalized) ?? 0) + 1;
+  const totalCalls = apiUsageState.totalCalls + 1;
+
+  if (totalCalls > totalLimit) {
+    throw new Error(
+      `[Financial Datasets API] call budget exceeded: ${totalCalls}/${totalLimit} requests in this run.`,
+    );
+  }
+  if (endpointCalls > perEndpointLimit) {
+    throw new Error(
+      `[Financial Datasets API] endpoint budget exceeded for ${normalized}: ${endpointCalls}/${perEndpointLimit} in this run.`,
+    );
+  }
+
+  apiUsageState.totalCalls = totalCalls;
+  apiUsageState.perEndpoint.set(normalized, endpointCalls);
+}
+
+function buildUsageSnapshot(): { totalCalls: number; endpoints: ApiUsageCounter[] } {
+  const endpoints = Array.from(apiUsageState.perEndpoint.entries())
+    .map(([endpoint, calls]) => ({ endpoint, calls }))
+    .sort((a, b) => b.calls - a.calls);
+  return {
+    totalCalls: apiUsageState.totalCalls,
+    endpoints,
+  };
+}
+
+export function getApiUsageSnapshot(): { totalCalls: number; endpoints: ApiUsageCounter[] } {
+  return buildUsageSnapshot();
+}
+
+export function resetApiUsageCounters(): void {
+  apiUsageState.totalCalls = 0;
+  apiUsageState.perEndpoint.clear();
+}
+
+export function writeApiUsageReport(label: string): string {
+  const baseDir = dexterPath('signal-engine', 'reports');
+  mkdirSync(baseDir, { recursive: true });
+  const target = path.join(baseDir, `api-usage-${label}.json`);
+  writeFileSync(
+    target,
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        limits: {
+          maxCallsPerRun: getMaxCallsPerRun(),
+          maxCallsPerEndpointPerRun: getMaxCallsPerEndpointPerRun(),
+        },
+        usage: buildUsageSnapshot(),
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+  return target;
 }
 
 /**
@@ -49,6 +151,7 @@ function getApiKey(): string {
  */
 async function executeRequest(
   url: string,
+  endpoint: string,
   label: string,
   init: RequestInit,
 ): Promise<Record<string, unknown>> {
@@ -60,6 +163,7 @@ async function executeRequest(
 
   let response: Response;
   try {
+    incrementUsage(endpoint);
     response = await fetch(url, {
       ...init,
       headers: {
@@ -102,6 +206,15 @@ export const api = {
       if (cached) {
         return cached;
       }
+      if (offlineReplayEnabled()) {
+        throw new Error(
+          `[Financial Datasets API] offline replay enabled and cache miss for ${label}.`,
+        );
+      }
+    } else if (offlineReplayEnabled()) {
+      throw new Error(
+        `[Financial Datasets API] offline replay enabled but uncached endpoint requested: ${label}.`,
+      );
     }
 
     const url = new URL(`${BASE_URL}${endpoint}`);
@@ -117,7 +230,7 @@ export const api = {
       }
     }
 
-    const data = await executeRequest(url.toString(), label, {});
+    const data = await executeRequest(url.toString(), endpoint, label, {});
 
     // Persist for future requests when the caller marked the response as cacheable
     if (options?.cacheable) {
@@ -134,7 +247,7 @@ export const api = {
     const label = `POST ${endpoint}`;
     const url = `${BASE_URL}${endpoint}`;
 
-    const data = await executeRequest(url, label, {
+    const data = await executeRequest(url, endpoint, label, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

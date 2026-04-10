@@ -26,6 +26,7 @@ If commands, thresholds, or workflow change, update this file in the same PR.
 4. Decide manually whether to execute.
 5. Log your action for later review.
 6. Run weekly performance review once per week.
+7. Run postmortem + calibration workflow only after enough closed trades.
 
 Do not skip step 1.
 
@@ -63,6 +64,22 @@ Default watchlist:
 bun run scan:daily
 ```
 
+Single-command operator workflow (recommended):
+```bash
+bun run ops:daily --tickers AAPL,MSFT,SHOP
+```
+
+This command runs scan + CSV logging + history snapshot + weekly/quality summaries + next-action checklist.
+
+Auto-log each alert row into paper-trade CSV during scan:
+```bash
+bun run scan:daily:log --tickers AAPL
+```
+
+Notes:
+- Auto-log dedupes repeated runs for the same `Date + Ticker`.
+- Different tickers on the same date are still logged as separate rows.
+
 Specific tickers:
 ```bash
 bun run scan:daily --tickers AAPL,SHOP,TD
@@ -98,6 +115,7 @@ For each ticker:
 - `delta`: what changed vs previous scan (main explainability field).
 - `executionPlan.costEstimate`: whether expected edge survives costs.
 - `executionPlan.constraints`: whether portfolio caps block the trade.
+- `positionPerformance`: mark-to-market P&L for stored positions (unrealized/realized/total).
 
 Rule: use `finalAction` for manual decisions, not `action`.
 
@@ -147,6 +165,71 @@ If you want machine-readable output for tracking:
 bun run review:weekly --json
 ```
 
+## 8.2) Signal-quality dashboard
+
+```bash
+bun run quality:signals
+```
+
+Use this to monitor hit rate by `finalAction` and confidence bucket.
+
+## 8.25) January trial backtest (AAPL example)
+
+Leakage-safe trial mode:
+- Decision at day close.
+- Execution at next trading day open.
+- Long-only policy (`COVER` mapped to `HOLD`).
+
+Run:
+
+```bash
+bun run backtest:trial --ticker AAPL --start 2026-01-01 --end 2026-01-31 --capital 10000
+```
+
+Artifacts:
+- `.dexter/signal-engine/backtests/trial-backtest-AAPL-2026-01-01-2026-01-31.json`
+- `.dexter/signal-engine/backtests/trial-backtest-AAPL-2026-01-01-2026-01-31.csv`
+
+## 8.3) Postmortem (loss/deviation diagnostics)
+
+Run postmortem incident generation:
+
+```bash
+bun run postmortem:run
+```
+
+Optional trusted-source research (Tier-1 whitelist only):
+
+```bash
+bun run postmortem:run --with-research
+```
+
+Incidents are stored at:
+- `.dexter/signal-engine/incidents.jsonl`
+
+## 8.4) Calibration proposals (manual approval only)
+
+Generate a proposal from incidents:
+
+```bash
+bun run calibration propose
+```
+
+Gate the proposal (must pass typecheck + signals + walk-forward):
+
+```bash
+bun run calibration gate --proposal proposal-YYYYMMDDHHMMSS
+```
+
+Apply only after manual sign-off:
+
+```bash
+bun run calibration apply --proposal proposal-YYYYMMDDHHMMSS --approve-by "Your Name"
+```
+
+Runtime overrides are written to:
+- `.dexter/signal-engine/config-overrides.json`
+
 ## 9) If you change strategy parameters
 
 When editing `src/signal-engine/config.ts`:
@@ -171,5 +254,10 @@ When editing `src/signal-engine/config.ts`:
   - `docs/paper-trade-log-template.md`
 - Weekly performance review:
   - `docs/weekly-performance-review.md`
+- Signal-quality dashboard:
+  - `docs/signal-quality-dashboard.md`
 - Position ledger:
   - `docs/position-ledger.md`
+- Calibration and postmortem artifacts:
+  - `.dexter/signal-engine/incidents.jsonl`
+  - `.dexter/signal-engine/calibration/proposals/*.json`
