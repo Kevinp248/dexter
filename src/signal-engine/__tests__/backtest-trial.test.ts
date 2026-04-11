@@ -127,4 +127,101 @@ describe('trial backtest', () => {
     );
     expect(report.dailyRecords).toHaveLength(31);
   });
+
+  test('supports long_short flow with SELL open-short and COVER close-short', async () => {
+    const bars = weekdayBars('2026-01-01', '2026-01-12');
+    const first = bars[0]?.date;
+    const third = bars[2]?.date;
+    const report = await runTrialBacktest(
+      {
+        ticker: 'AAPL',
+        startDate: '2026-01-01',
+        endDate: '2026-01-12',
+        mode: 'long_short',
+        signalProfile: 'swing_alpha',
+      },
+      {
+        getBars: async () => bars,
+        runSignal: async ({ asOfDate }) => ({
+          finalAction: asOfDate === first ? 'SELL' : asOfDate === third ? 'COVER' : 'HOLD',
+          fallbackUsed: false,
+          targetNotionalUsd: 3_000,
+          oneWayCostBps: 10,
+          blockersTop3: [],
+          alphaLaneScore: -0.4,
+          contextLaneScore: -0.1,
+        }),
+      },
+    );
+
+    const minShares = Math.min(...report.dailyRecords.map((row) => row.shares));
+    expect(minShares).toBeLessThan(0);
+    const lastRow = report.dailyRecords[report.dailyRecords.length - 1];
+    expect(lastRow.shares).toBe(0);
+    expect(report.executionRows.some((row) => row.executedAction === 'COVER')).toBe(true);
+  });
+
+  test('is deterministic with the same bars and signal stream', async () => {
+    const bars = weekdayBars('2026-01-01', '2026-01-10');
+    const run = async () =>
+      runTrialBacktest(
+        {
+          ticker: 'AAPL',
+          startDate: '2026-01-01',
+          endDate: '2026-01-10',
+          mode: 'long_only',
+          signalProfile: 'adaptive_safe',
+        },
+        {
+          getBars: async () => bars,
+          runSignal: async ({ asOfDate }) => ({
+            finalAction: asOfDate === bars[0].date ? 'BUY' : asOfDate === bars[3].date ? 'SELL' : 'HOLD',
+            fallbackUsed: false,
+            targetNotionalUsd: 4_000,
+            oneWayCostBps: 10,
+            blockersTop3: [],
+            alphaLaneScore: 0.1,
+            contextLaneScore: 0.05,
+          }),
+        },
+      );
+
+    const one = await run();
+    const two = await run();
+    expect(one.summary).toEqual(two.summary);
+    expect(one.dailyRecords).toEqual(two.dailyRecords);
+    expect(one.executionRows).toEqual(two.executionRows);
+  });
+
+  test('macd_parity profile executes without multi-agent providers', async () => {
+    const bars = weekdayBars('2025-11-01', '2026-01-31').map((bar, idx) => {
+      // Oscillating trend to force MACD flips.
+      const drift = idx % 6 < 3 ? 1.4 : -1.2;
+      const base = 100 + idx * 0.2 + drift * idx * 0.15;
+      return {
+        ...bar,
+        open: base,
+        high: base + 1.2,
+        low: base - 1.1,
+        close: base + (idx % 2 === 0 ? 0.6 : -0.5),
+      };
+    });
+
+    const report = await runTrialBacktest(
+      {
+        ticker: 'AAPL',
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        mode: 'long_short',
+        signalProfile: 'macd_parity',
+        apiDelayMs: 0,
+      },
+      {
+        getBars: async () => bars,
+      },
+    );
+
+    expect(report.summary.trades).toBeGreaterThan(0);
+    expect(report.dailyRecords.some((row) => row.alphaLaneScore !== null)).toBe(true);
+  });
 });

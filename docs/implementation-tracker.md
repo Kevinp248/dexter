@@ -76,10 +76,14 @@ Branch: `feature-kevin-dexter`
 13. Added calibration proposal pipeline with gated checks and manual approval apply.
 14. Added a single-command operator workflow (`bun run ops:daily`).
 15. Added leakage-safe trial backtest command/reporting for AAPL January workflows.
+16. Added dual-lane `swing_alpha` backtest profile (technical alpha lane + context lane).
+17. Added `long_short` research backtest mode with deterministic short-side accounting (`SELL` open/increase short, `COVER` close short).
+18. Added hybrid historical price routing (`cache_yahoo_paid_fallback`) plus cache-hit/API endpoint diagnostics in backtest summary.
+19. Added cross-ticker harness (`bun run backtest:matrix`) and Jan-Mar 2026 AAPL/MSFT comparison report.
 
 ## Next Steps (Ordered)
 
-1. Add a separate tactical decision channel (entry/exit score) so valuation drag does not dominate short-horizon swing entries.
+1. Add volatility-aware per-ticker position scaling for `swing_alpha` (reduce MSFT drawdown without starving AAPL opportunities).
 2. Add a proposal diff preview command (current config vs runtime overrides).
 3. Externalize trusted-source whitelist into a managed config file.
 4. Add ticker-level postmortem severity policy (warn-only vs temporary trade block).
@@ -226,3 +230,30 @@ Branch: `feature-kevin-dexter`
   - Added CLI overrides for tactical thresholds and lifecycle controls.
   - Calibrated tactical defaults (`tacticalZScoreMax=-0.9`) to avoid over-triggering while preserving earlier loss improvement.
   - Re-ran AAPL Jan/Feb/Mar OOS: still `-0.0577%` with 2 trades; safer behavior, but profitability remains insufficient.
+- 2026-04-10:
+  - Implemented `swing_alpha` profile in trial backtest with dual-lane scoring:
+    - technical alpha lane (EMA/RSI/MACD/BB/Stoch),
+    - context lane (fundamentals/sentiment/valuation modifier).
+  - Added bounded no-trade band widening when confidence/data quality are strong.
+  - Added `long_short` backtest mode with explicit `SELL`-to-short and `COVER` execution flow.
+  - Added hybrid historical price routing (`cache_yahoo_paid_fallback`) and summary diagnostics:
+    - `blockersTop3`, `alphaLaneScore`, `contextLaneScore`, `cacheHitRate`, `apiCallsByEndpoint`.
+  - Added cross-ticker harness command (`bun run backtest:matrix`) and generated Jan-Mar 2026 results for AAPL/MSFT in:
+    - `docs/cross-ticker-oos-jan-mar-2026.md`
+    - `.dexter/signal-engine/reports/cross-ticker-harness-2026-04-10T23-47-28-698Z.{json,csv}`.
+  - Validation status: `typecheck` pass, `npm run test:signals` pass (13 suites, 42 tests).
+- 2026-04-11:
+  - Added `macd_parity` backtest profile for direct Claude-style single-strategy benchmarking.
+  - `macd_parity` uses a price-only MACD decision path (no multi-agent gating) with deterministic position-state transitions.
+  - Added CLI preset `--preset macd-parity` and profile flag support (`--profile macd_parity`).
+  - Added regression test ensuring `macd_parity` runs without analysis providers and generates trades.
+  - Ran AAPL Q1 2025 parity backtest:
+    - `Profile=macd_parity`, `Mode=long_short`
+    - Return `-2.8398%`, Max DD `-9.8171%`, Trades `18`
+    - Output: `.dexter/signal-engine/backtests/trial-backtest-AAPL-macd_parity-2025-01-01-2025-03-31.json`.
+- 2026-04-11:
+  - Added exact vectorized parity runner (`src/signal-engine/vectorized-parity.cli.ts`) matching Claude-style math:
+    - warmup history + shifted position + turnover-cost net returns.
+  - Verified AAPL Q1 2025 replication: `MACD Crossover = +5.03%` with matching drawdown/trade profile.
+  - Identified primary parity bottleneck: prior mismatch between event-driven execution model and vectorized parity methodology.
+  - Saved findings: `docs/parity-gap-analysis-2026-04-11.md`.
