@@ -19,7 +19,7 @@ function applyPreset(
   if (key === 'adaptive-safe') {
     return {
       ...out,
-      signalProfile: 'adaptive',
+      signalProfile: 'adaptive_safe',
       adaptiveBuyScoreFloor: -0.14,
       adaptiveAddScoreImprovementMin: 0.01,
       adaptiveMinExpectedEdgeAfterCostsBps: 20,
@@ -46,6 +46,23 @@ function applyPreset(
       exitMaxHoldTradingDays: 6,
     };
   }
+  if (key === 'swing-alpha') {
+    return {
+      ...out,
+      signalProfile: 'swing_alpha',
+      mode: 'long_short',
+      tacticalDipEnabled: true,
+      tacticalMinEdgeAfterCostsBps: 6,
+    };
+  }
+  if (key === 'macd-parity') {
+    return {
+      ...out,
+      signalProfile: 'macd_parity',
+      mode: 'long_short',
+      adaptiveMinExpectedEdgeAfterCostsBps: 0,
+    };
+  }
   return out;
 }
 
@@ -58,7 +75,11 @@ function parseArgs(argv: string[]): Partial<TrialBacktestConfig> {
     mode: 'long_only',
     execution: 'next_open',
     apiDelayMs: 250,
-    signalProfile: 'adaptive',
+    signalProfile: 'adaptive_safe',
+    dataRouting: {
+      priceProvider: 'cache_yahoo_paid_fallback',
+      fundamentalsProvider: 'paid_cached',
+    },
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -104,10 +125,39 @@ function parseArgs(argv: string[]): Partial<TrialBacktestConfig> {
       i += 1;
       continue;
     }
+    if (arg === '--mode' && argv[i + 1]) {
+      const value = argv[i + 1].trim().toLowerCase();
+      if (value === 'long_only' || value === 'long_short') out.mode = value;
+      i += 1;
+      continue;
+    }
     if ((arg === '--profile' || arg === '--signal-profile') && argv[i + 1]) {
       const value = argv[i + 1].trim().toLowerCase();
-      if (value === 'baseline' || value === 'research' || value === 'adaptive' || value === 'ml_sidecar') {
+      if (
+        value === 'baseline' ||
+        value === 'research' ||
+        value === 'adaptive' ||
+        value === 'adaptive_safe' ||
+        value === 'swing_alpha' ||
+        value === 'macd_parity' ||
+        value === 'ml_sidecar'
+      ) {
         out.signalProfile = value;
+      }
+      i += 1;
+      continue;
+    }
+    if (arg === '--price-provider' && argv[i + 1]) {
+      const value = argv[i + 1].trim().toLowerCase();
+      if (value === 'paid_api' || value === 'cache_yahoo_paid_fallback') {
+        out.dataRouting = {
+          ...(out.dataRouting ?? {
+            priceProvider: 'cache_yahoo_paid_fallback',
+            fundamentalsProvider: 'paid_cached',
+          }),
+          priceProvider: value,
+          fundamentalsProvider: 'paid_cached',
+        };
       }
       i += 1;
       continue;
@@ -255,6 +305,8 @@ async function main(): Promise<void> {
   console.log(`Window: ${report.config.startDate} -> ${report.config.endDate}`);
   console.log(`Rows: ${report.dailyRecords.length} calendar days`);
   console.log(`Profile: ${report.config.signalProfile}`);
+  console.log(`Mode: ${report.config.mode}`);
+  console.log(`Price provider: ${report.config.dataRouting.priceProvider}`);
   console.log(`Trades: ${report.summary.trades}`);
   console.log(`Net PnL: $${report.summary.netPnlUsd}`);
   console.log(`Total Return: ${report.summary.totalReturnPct}%`);
@@ -267,7 +319,14 @@ async function main(): Promise<void> {
   console.log(`Near BUY Days: ${report.summary.nearBuyDays}`);
   console.log(`Near SELL Days: ${report.summary.nearSellDays}`);
   console.log(`Data Quality: ${report.summary.dataQualityStatus.toUpperCase()} - ${report.summary.dataQualityNote}`);
+  console.log(`Cache Hit Rate: ${report.summary.cacheHitRate}%`);
   console.log(`API calls used: ${usage.totalCalls}`);
+  if (report.summary.apiCallsByEndpoint.length > 0) {
+    console.log('API calls by endpoint:');
+    for (const item of report.summary.apiCallsByEndpoint.slice(0, 5)) {
+      console.log(`  - ${item.endpoint}: ${item.calls}`);
+    }
+  }
   console.log(`API usage report: ${path.relative(process.cwd(), usageReportPath)}`);
   console.log(`JSON report: ${path.relative(process.cwd(), persisted.jsonPath)}`);
   console.log(`CSV report: ${path.relative(process.cwd(), persisted.csvPath)}`);

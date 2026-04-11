@@ -205,6 +205,18 @@ Backtest with reusable presets (easier cross-ticker evaluation):
 ```bash
 bun run backtest:trial --preset adaptive-safe --ticker AAPL --start 2026-01-01 --end 2026-01-31
 bun run backtest:trial --preset adaptive-explore --ticker MSFT --start 2026-01-01 --end 2026-01-31
+bun run backtest:trial --preset swing-alpha --ticker AAPL --start 2026-01-01 --end 2026-01-31
+bun run backtest:trial --preset macd-parity --ticker AAPL --start 2025-01-01 --end 2025-03-31
+```
+
+Exact vectorized parity runner (Claude-style baseline reproduction):
+```bash
+bun run backtest:parity --ticker AAPL --start 2025-01-01 --end 2025-03-31 --capital 10000
+```
+
+Backtest with explicit profile/mode routing knobs:
+```bash
+bun run backtest:trial --ticker AAPL --start 2026-01-01 --end 2026-01-31 --profile swing_alpha --mode long_short --price-provider cache_yahoo_paid_fallback
 ```
 
 Backtest with strict API call budget and cache-only replay mode:
@@ -252,6 +264,11 @@ This runs scan + CSV logging + quick weekly/quality checks + plain-English next 
 HOLD blocker analytics (monthly + overall):
 ```bash
 bun run review:blockers --ticker AAPL --profile adaptive --start 2026-01-01 --end 2026-03-31
+```
+
+Cross-ticker OOS harness (AAPL + MSFT, Jan-Mar 2026, profiles x modes):
+```bash
+bun run backtest:matrix
 ```
 
 Record real/paper fills to persistent ledger:

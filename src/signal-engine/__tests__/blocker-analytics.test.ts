@@ -10,6 +10,10 @@ function makeReport(dailyRecords: TrialBacktestReport['dailyRecords']): TrialBac
       initialCapitalUsd: 10_000,
       mode: 'long_only',
       execution: 'next_open',
+      dataRouting: {
+        priceProvider: 'cache_yahoo_paid_fallback',
+        fundamentalsProvider: 'paid_cached',
+      },
       apiDelayMs: 0,
       fundamentalRefreshDays: 7,
       valuationRefreshDays: 7,
@@ -61,6 +65,8 @@ function makeReport(dailyRecords: TrialBacktestReport['dailyRecords']): TrialBac
       noSignalTradingDays: 0,
       nearBuyDays: 0,
       nearSellDays: 0,
+      cacheHitRate: 0,
+      apiCallsByEndpoint: [],
     },
     executionRows: [],
     dailyRecords,
@@ -98,6 +104,9 @@ describe('blocker analytics summary', () => {
         sellScoreGap: 0,
         longExitGap: 0,
         primaryBlocker: 'Aggregate score in HOLD zone',
+        blockersTop3: ['Aggregate score in HOLD zone'],
+        alphaLaneScore: 0,
+        contextLaneScore: 0,
       },
       {
         date: '2026-01-03',
@@ -127,6 +136,9 @@ describe('blocker analytics summary', () => {
         sellScoreGap: 0,
         longExitGap: 0,
         primaryBlocker: 'NO_SIGNAL: expected edge after costs below minimum',
+        blockersTop3: ['NO_SIGNAL: expected edge after costs below minimum'],
+        alphaLaneScore: 0,
+        contextLaneScore: 0,
       },
       {
         date: '2026-02-04',
@@ -156,6 +168,9 @@ describe('blocker analytics summary', () => {
         sellScoreGap: 0,
         longExitGap: 0,
         primaryBlocker: 'No blocker',
+        blockersTop3: ['No blocker'],
+        alphaLaneScore: 0,
+        contextLaneScore: 0,
       },
     ]);
 
