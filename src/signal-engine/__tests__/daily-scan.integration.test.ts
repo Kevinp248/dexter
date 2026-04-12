@@ -10,11 +10,16 @@ function makeProviders(
 ): ScanProviders {
   const close = 100;
   const volume = Math.floor(averageDailyDollarVolume / close);
-  const bars = Array.from({ length: 30 }, (_, i) => ({
-    date: `2025-12-${String(i + 1).padStart(2, '0')}`,
-    close,
-    volume,
-  }));
+  const bars = Array.from({ length: 120 }, (_, i) => {
+    const dt = new Date('2025-08-01T00:00:00.000Z');
+    dt.setUTCDate(dt.getUTCDate() + i);
+    return {
+      date: dt.toISOString().slice(0, 10),
+      close,
+      rawClose: close,
+      volume,
+    };
+  });
 
   return {
     async runTechnicalAnalysis(ticker: string) {
@@ -25,7 +30,9 @@ function makeProviders(
         signal: technicalScore > 0.1 ? 'bullish' as const : technicalScore < -0.1 ? 'bearish' as const : 'neutral' as const,
         volatility: technicalVolatility,
         bars,
-        returns: Array.from({ length: 30 }, (_, i) => (i % 2 === 0 ? 0.01 : -0.005)),
+        returns: Array.from({ length: bars.length - 1 }, (_, i) =>
+          i % 2 === 0 ? 0.01 : -0.005,
+        ),
         summary: 'Mock technical',
         subSignals: {
           trend: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
@@ -54,6 +61,7 @@ function makeProviders(
           valuationRatios: { signal: 'neutral' as const, score: 0, details: 'mock' },
         },
         summary: 'Mock fundamentals',
+        pitAvailabilityMissing: false,
       };
     },
 
@@ -72,6 +80,7 @@ function makeProviders(
           residualIncome: { value: 100, gap: 0, signal: 'neutral' as const, details: 'mock' },
         },
         summary: 'Mock valuation',
+        pitAvailabilityMissing: false,
       };
     },
 
@@ -82,6 +91,7 @@ function makeProviders(
         summary: 'Mock sentiment',
         positive: sentimentScore > 0 ? 3 : 1,
         negative: sentimentScore < 0 ? 3 : 1,
+        pitAvailabilityMissing: false,
       };
     },
   };
@@ -127,14 +137,15 @@ describe('runDailyScan deterministic integration', () => {
     expect(scan.alerts[0].finalAction).toBe('HOLD');
   });
 
-  test('golden scenario: short position and thesis flip -> COVER', async () => {
+  test('golden scenario: short position and thesis flip -> HOLD (canonical long-only)', async () => {
     const scan = await runDailyScan(
       { tickers: ['NVDA'], positions: { NVDA: { longShares: 0, shortShares: 100 } } },
       makeProviders(0.6, 0.5, 0.5, 0.3, 0.18),
     );
     expect(scan.alerts).toHaveLength(1);
-    expect(scan.alerts[0].action).toBe('COVER');
-    expect(scan.alerts[0].finalAction).toBe('COVER');
+    expect(scan.alerts[0].rawAction).toBe('COVER');
+    expect(scan.alerts[0].action).toBe('HOLD');
+    expect(scan.alerts[0].finalAction).toBe('HOLD');
   });
 
   test('portfolio cap breach downgrades BUY to HOLD', async () => {

@@ -16,6 +16,7 @@ import { estimateTargetNotionalUsd } from './execution.js';
 import { runDailyScan, type ScanProviders } from './index.js';
 import { SIGNAL_CONFIG } from './config.js';
 import { getApiUsageSnapshot } from '../tools/finance/api.js';
+import { normalizeActionForMode } from './action-normalization.js';
 
 export type BacktestMode = 'long_only' | 'long_short';
 export type BacktestExecutionModel = 'next_open';
@@ -226,6 +227,13 @@ function round2(value: number): number {
 
 function round4(value: number): number {
   return Number(value.toFixed(4));
+}
+
+function adjustedCloseOf(bar: PriceBar): number {
+  if (Number.isFinite(bar.adjustedClose) && bar.adjustedClose > 0) {
+    return bar.adjustedClose;
+  }
+  return bar.close;
 }
 
 function asDateOnly(value: string): string {
@@ -497,7 +505,7 @@ function technicalAlphaLane(
   };
 } {
   const bars = history.slice(-220);
-  const closes = bars.map((bar) => bar.close).filter(Number.isFinite);
+  const closes = bars.map((bar) => adjustedCloseOf(bar)).filter(Number.isFinite);
   const highs = bars.map((bar) => bar.high).filter(Number.isFinite);
   const lows = bars.map((bar) => bar.low).filter(Number.isFinite);
   if (closes.length < 35 || highs.length < 14 || lows.length < 14) {
@@ -573,7 +581,7 @@ function macdParitySignal(history: PriceBar[]): {
   signal: number;
   score: number;
 } {
-  const closes = history.map((bar) => bar.close).filter(Number.isFinite);
+  const closes = history.map((bar) => adjustedCloseOf(bar)).filter(Number.isFinite);
   if (closes.length < 35) {
     return { action: 'HOLD', macd: 0, signal: 0, score: 0 };
   }
@@ -1106,45 +1114,28 @@ async function defaultGetBars(
   return fetchHistoricalPricesRouted(ticker, startDate, endDate, provider);
 }
 
-function normalizeLongOnlyAction(
-  action: SignalSnapshot['finalAction'],
-  longShares: number,
-): { normalized: 'BUY' | 'SELL' | 'HOLD' | 'COVER'; note: string } {
-  if (action === 'COVER') {
-    return { normalized: 'HOLD', note: 'COVER mapped to HOLD in long-only mode' };
-  }
-  if (action === 'SELL' && longShares <= 0) {
-    return { normalized: 'HOLD', note: 'SELL ignored: no long position' };
-  }
-  if (action === 'BUY' || action === 'SELL' || action === 'HOLD' || action === 'COVER') {
-    return { normalized: action, note: '' };
-  }
-  return { normalized: 'HOLD', note: 'Unsupported action mapped to HOLD' };
-}
-
-function normalizeLongShortAction(
-  action: SignalSnapshot['finalAction'],
-  shortShares: number,
-): { normalized: 'BUY' | 'SELL' | 'HOLD' | 'COVER'; note: string } {
-  if (action === 'COVER' && shortShares <= 0) {
-    return { normalized: 'HOLD', note: 'COVER ignored: no short position' };
-  }
-  if (action === 'BUY' || action === 'SELL' || action === 'HOLD' || action === 'COVER') {
-    return { normalized: action, note: '' };
-  }
-  return { normalized: 'HOLD', note: 'Unsupported action mapped to HOLD' };
-}
-
 function normalizeActionByMode(
   mode: BacktestMode,
   action: SignalSnapshot['finalAction'],
   longShares: number,
   shortShares: number,
 ): { normalized: 'BUY' | 'SELL' | 'HOLD' | 'COVER'; note: string } {
-  if (mode === 'long_short') {
-    return normalizeLongShortAction(action, shortShares);
+  const normalized = normalizeActionForMode(action, mode, {
+    longShares,
+    shortShares,
+  });
+  if (
+    normalized.normalizedAction === 'BUY' ||
+    normalized.normalizedAction === 'SELL' ||
+    normalized.normalizedAction === 'HOLD' ||
+    normalized.normalizedAction === 'COVER'
+  ) {
+    return {
+      normalized: normalized.normalizedAction,
+      note: normalized.note,
+    };
   }
-  return normalizeLongOnlyAction(action, longShares);
+  return { normalized: 'HOLD', note: 'SHORT mapped to HOLD for execution path' };
 }
 
 function mean(values: number[]): number | null {
@@ -1418,7 +1409,10 @@ export async function runTrialBacktest(
       signalSnapshot = await runSignal({
         ticker: resolved.ticker,
         asOfDate: date,
-        equityUsd: cashUsd + longShares * bar.close - shortShares * bar.close,
+        equityUsd:
+          cashUsd +
+          longShares * adjustedCloseOf(bar) -
+          shortShares * adjustedCloseOf(bar),
         longShares,
         shortShares,
       });
@@ -1433,7 +1427,7 @@ export async function runTrialBacktest(
       normalizedAction = normalized.normalized;
       actionNote = normalized.note;
       if (bar && longShares > 0 && longCostBasisUsd > 0) {
-        const pnlPct = ((bar.close - longCostBasisUsd) / longCostBasisUsd) * 100;
+        const pnlPct = ((adjustedCloseOf(bar) - longCostBasisUsd) / longCostBasisUsd) * 100;
         if (pnlPct <= -stopLossPct) {
           normalizedAction = 'SELL';
           actionNote = `SELL forced by stop-loss (${pnlPct.toFixed(2)}%)`;
@@ -1446,7 +1440,7 @@ export async function runTrialBacktest(
         }
       }
       if (bar && shortShares > 0 && shortCostBasisUsd > 0) {
-        const pnlPct = ((shortCostBasisUsd - bar.close) / shortCostBasisUsd) * 100;
+        const pnlPct = ((shortCostBasisUsd - adjustedCloseOf(bar)) / shortCostBasisUsd) * 100;
         if (pnlPct <= -stopLossPct) {
           normalizedAction = 'COVER';
           actionNote = `COVER forced by stop-loss (${pnlPct.toFixed(2)}%)`;
@@ -1475,9 +1469,9 @@ export async function runTrialBacktest(
       }
     }
 
-    const closePrice = bar ? round4(bar.close) : lastMarkClose;
+    const closePrice = bar ? round4(adjustedCloseOf(bar)) : lastMarkClose;
     if (bar) {
-      lastMarkClose = round4(bar.close);
+      lastMarkClose = round4(adjustedCloseOf(bar));
     }
     const positionValueUsd =
       closePrice === null ? 0 : longShares * closePrice - shortShares * closePrice;

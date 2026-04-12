@@ -5,16 +5,17 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
   "alerts": [
     {
       "action": "HOLD",
-      "confidence": 41.75,
+      "actionNormalizationNote": null,
+      "confidence": 35,
       "dataCompleteness": {
         "missingCritical": [],
         "notes": [
-          "Technical bars: 30",
+          "Technical bars: 120",
           "Fundamental metrics present: 2",
           "Valuation methods with valid value: 4",
           "Sentiment signal count: 4",
         ],
-        "score": 0.5125,
+        "score": 0.775,
         "status": "warn",
       },
       "delta": {
@@ -38,8 +39,8 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
         },
         "costEstimate": {
           "estimatedRoundTripCostUsd": 0,
-          "expectedEdgeAfterCostsBps": 56.8,
-          "expectedEdgeBps": 93.8,
+          "expectedEdgeAfterCostsBps": 52.75,
+          "expectedEdgeBps": 89.75,
           "isTradeableAfterCosts": true,
           "oneWayCostBps": 18.5,
           "roundTripCostBps": 37,
@@ -115,6 +116,8 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
         "reason": null,
         "suppressed": false,
       },
+      "rawAction": "HOLD",
+      "rawFinalAction": "HOLD",
       "reasoning": {
         "aggregateScore": 0.275,
         "components": [
@@ -186,6 +189,7 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
                   "signal": "neutral",
                 },
               },
+              "pitAvailabilityMissing": false,
               "signal": "bullish",
               "summary": "Mock fundamentals",
             },
@@ -220,6 +224,7 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
                   "value": 100,
                 },
               },
+              "pitAvailabilityMissing": false,
               "signal": "bullish",
               "summary": "Mock valuation",
               "weightedGap": 0.09,
@@ -230,6 +235,7 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
           {
             "details": {
               "negative": 1,
+              "pitAvailabilityMissing": false,
               "positive": 3,
               "summary": "Mock sentiment",
             },
@@ -241,11 +247,13 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
           "annualizedVolatility": 0.2,
           "averageCorrelation": null,
           "basePositionLimitPct": 0.195,
-          "checks": [],
-          "combinedLimitPct": 0.195,
-          "correlationMultiplier": 1,
-          "maxAllocation": 0.195,
-          "riskScore": 0.75,
+          "checks": [
+            "Correlation unavailable; conservative diversification cap applied",
+          ],
+          "combinedLimitPct": 0.13649999999999998,
+          "correlationMultiplier": 0.7,
+          "maxAllocation": 0.13649999999999998,
+          "riskScore": 0.5249999999999999,
           "ticker": "SHOP",
         },
         "weightedInputs": {

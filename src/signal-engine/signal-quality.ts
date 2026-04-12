@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PaperTradeRow, parsePaperTradeCsv } from './weekly-review.js';
+import { normalizeActionForMode } from './action-normalization.js';
 
 type ConfidenceBucket = 'UNKNOWN' | 'LOW' | 'MEDIUM' | 'HIGH';
 
@@ -120,7 +121,24 @@ export function summarizeSignalQuality(
 
   for (const row of closedRows) {
     const result = row.resultPct as number;
-    const action = (row.finalAction || row.action || 'UNKNOWN').toUpperCase();
+    const inferredPosition = {
+      longShares:
+        row.action.trim().toUpperCase() === 'SELL' ||
+        row.finalAction.trim().toUpperCase() === 'SELL'
+          ? 1
+          : 0,
+      shortShares:
+        row.action.trim().toUpperCase() === 'COVER' ||
+        row.finalAction.trim().toUpperCase() === 'COVER'
+          ? 1
+          : 0,
+    };
+    const normalizedAction = normalizeActionForMode(
+      row.finalAction || row.action || 'HOLD',
+      'long_only',
+      inferredPosition,
+    );
+    const action = normalizedAction.canonicalAction;
     const bucket = confidenceBucket(row.confidence);
     const actionBucketKey = `${action}:${bucket}`;
 

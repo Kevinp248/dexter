@@ -12,6 +12,7 @@ import {
 } from './execution.js';
 import { evaluatePortfolioConstraints } from './portfolio-constraints.js';
 import { deriveConfidence, resolveAction } from './rules.js';
+import { normalizeActionForMode } from './action-normalization.js';
 import {
   DataCompleteness,
   ExecutionPlan,
@@ -117,7 +118,7 @@ async function runWithRetryAndFallback<T>(
 
 function correlation(a: number[], b: number[]): number | null {
   const n = Math.min(a.length, b.length);
-  if (n < 10) return null;
+  if (n < SIGNAL_CONFIG.risk.correlationMinObservations) return null;
   const xs = a.slice(-n);
   const ys = b.slice(-n);
   const meanX = xs.reduce((sum, v) => sum + v, 0) / n;
@@ -163,6 +164,8 @@ function estimatePriceFromTechnical(
   technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>,
 ): number {
   const latest = technical.bars[technical.bars.length - 1];
+  if (latest && Number.isFinite(latest.rawClose) && latest.rawClose > 0)
+    return latest.rawClose;
   if (latest && Number.isFinite(latest.close) && latest.close > 0) return latest.close;
   return SIGNAL_CONFIG.execution.fallbackEstimatedPrice;
 }
@@ -407,8 +410,21 @@ function evaluateDataCompleteness(
     `Valuation methods with valid value: ${valuationMethodCount}`,
     `Sentiment signal count: ${sentimentSignals}`,
   ];
+  if (fundamental.pitAvailabilityMissing)
+    notes.push('Fundamentals missing explicit PIT availability timestamp');
+  if (valuation.pitAvailabilityMissing)
+    notes.push('Valuation inputs missing explicit PIT availability timestamp');
+  if (sentiment.pitAvailabilityMissing)
+    notes.push('Sentiment inputs missing explicit PIT availability timestamp');
   const status: DataCompleteness['status'] =
-    missingCritical.length > 0 ? 'fail' : score < 0.8 ? 'warn' : 'pass';
+    missingCritical.length > 0
+      ? 'fail'
+      : fundamental.pitAvailabilityMissing ||
+          valuation.pitAvailabilityMissing ||
+          sentiment.pitAvailabilityMissing ||
+          score < 0.8
+        ? 'warn'
+        : 'pass';
 
   return {
     score,
@@ -459,6 +475,7 @@ export async function runDailyScan(
           score: 0,
           confidence: 0,
           signal: 'neutral' as const,
+          pitAvailabilityMissing: false,
           metrics: {},
           summary: 'Fundamental data unavailable',
           pillars: {
@@ -479,6 +496,7 @@ export async function runDailyScan(
           summary: 'Sentiment data unavailable',
           positive: 0,
           negative: 0,
+          pitAvailabilityMissing: false,
         },
         'sentiment',
         'Retry after 15 minutes; if still empty, treat sentiment as low-priority and use other components.',
@@ -490,6 +508,7 @@ export async function runDailyScan(
           score: 0,
           confidence: 0,
           signal: 'neutral' as const,
+          pitAvailabilityMissing: false,
           marketCap: 0,
           weightedGap: 0,
           methods: {
@@ -516,6 +535,42 @@ export async function runDailyScan(
       valuationResult.event,
       ...detectDataFallbacks(entry.ticker, technical, fundamental, valuation),
     ];
+    if (fundamental.pitAvailabilityMissing) {
+      fallbackEvents.push({
+        component: 'fundamental_pit',
+        fallbackUsed: true,
+        reason:
+          'Fundamentals missing explicit availability timestamp; applied conservative confidence penalty.',
+        retrySuggestion:
+          'Retry with provider fields that include publish/accepted/available timestamps.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
+    if (valuation.pitAvailabilityMissing) {
+      fallbackEvents.push({
+        component: 'valuation_pit',
+        fallbackUsed: true,
+        reason:
+          'Valuation inputs missing explicit availability timestamp; applied conservative confidence penalty.',
+        retrySuggestion:
+          'Retry with provider fields that include publish/accepted/available timestamps.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
+    if (sentiment.pitAvailabilityMissing) {
+      fallbackEvents.push({
+        component: 'sentiment_pit',
+        fallbackUsed: true,
+        reason:
+          'News items missing explicit availability timestamp; applied conservative sentiment penalty.',
+        retrySuggestion:
+          'Retry with provider fields that include publish/accepted/available timestamps.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
 
     interim.push({
       ticker: entry.ticker,
@@ -579,7 +634,13 @@ export async function runDailyScan(
       1,
     );
     const positionContext = getPositionContext(item.ticker, options.positions);
-    const action = resolveAction(aggregateScore, risk, positionContext);
+    const rawAction = resolveAction(aggregateScore, risk, positionContext);
+    const normalizedInitialAction = normalizeActionForMode(
+      rawAction,
+      'long_only',
+      positionContext,
+    );
+    const action = normalizedInitialAction.canonicalAction;
     const baseConfidence = deriveConfidence(aggregateScore, risk);
     const confidence = isDegradedDataMode
       ? roundTo(baseConfidence * SIGNAL_CONFIG.confidence.degradedDataPenalty, 4)
@@ -594,7 +655,6 @@ export async function runDailyScan(
     );
     let estimatedShares = Math.floor(targetNotional / estimatedPrice);
     if (action === 'SELL') estimatedShares = positionContext.longShares;
-    if (action === 'COVER') estimatedShares = positionContext.shortShares;
     const notionalUsd = estimatedShares * estimatedPrice;
     const costEstimate = estimateExecutionCosts({
       action,
@@ -648,13 +708,19 @@ export async function runDailyScan(
         lastError: null,
       });
     }
-    const finalAction =
+    const rawFinalAction =
       suppressedByQualityGuard ||
       suppressedByDataGap ||
       shouldDowngradeToHold ||
       shouldDowngradeForRegionalChecks
         ? 'HOLD'
         : action;
+    const normalizedFinalAction = normalizeActionForMode(
+      rawFinalAction,
+      'long_only',
+      positionContext,
+    );
+    const finalAction = normalizedFinalAction.canonicalAction;
     const delta = buildSignalDelta(
       options.previousSignalsByTicker?.[item.ticker],
       action,
@@ -692,6 +758,7 @@ export async function runDailyScan(
         details: {
           signal: item.fundamental.signal,
           summary: item.fundamental.summary,
+          pitAvailabilityMissing: item.fundamental.pitAvailabilityMissing,
           pillars: item.fundamental.pillars,
           metrics: item.fundamental.metrics,
         },
@@ -702,6 +769,7 @@ export async function runDailyScan(
         details: {
           signal: item.valuation.signal,
           summary: item.valuation.summary,
+          pitAvailabilityMissing: item.valuation.pitAvailabilityMissing,
           weightedGap: item.valuation.weightedGap,
           methods: item.valuation.methods,
         },
@@ -711,6 +779,7 @@ export async function runDailyScan(
         score: item.sentiment.score,
         details: {
           summary: item.sentiment.summary,
+          pitAvailabilityMissing: item.sentiment.pitAvailabilityMissing,
           positive: item.sentiment.positive,
           negative: item.sentiment.negative,
         },
@@ -719,9 +788,20 @@ export async function runDailyScan(
 
     const payload: SignalPayload = {
       ticker: item.ticker,
-      action: suppressedByQualityGuard || suppressedByDataGap ? 'HOLD' : action,
+      action:
+        suppressedByQualityGuard || suppressedByDataGap
+          ? 'HOLD'
+          : normalizedInitialAction.canonicalAction,
       confidence: suppressedByQualityGuard || suppressedByDataGap ? 0 : confidence,
       finalAction,
+      rawAction,
+      rawFinalAction,
+      actionNormalizationNote:
+        normalizedInitialAction.note || normalizedFinalAction.note
+          ? [normalizedInitialAction.note, normalizedFinalAction.note]
+              .filter(Boolean)
+              .join(' | ')
+          : null,
       qualityGuard: {
         suppressed: suppressedByQualityGuard || suppressedByDataGap,
         reason: suppressedByDataGap

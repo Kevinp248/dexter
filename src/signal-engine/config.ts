@@ -118,6 +118,8 @@ export interface SignalEngineConfig {
     volatilityCheckThreshold: number;
     expensivePeThreshold: number;
     concentrationCorrelationThreshold: number;
+    correlationMinObservations: number;
+    correlationUnavailableMultiplier: number;
   };
   execution: {
     confidenceScaleMin: number;
@@ -265,6 +267,8 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
     volatilityCheckThreshold: 0.45,
     expensivePeThreshold: 40,
     concentrationCorrelationThreshold: 0.75,
+    correlationMinObservations: 60,
+    correlationUnavailableMultiplier: 0.7,
   },
   execution: {
     confidenceScaleMin: 0.1,

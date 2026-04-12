@@ -10,6 +10,7 @@ export interface SentimentSignal {
   summary: string;
   positive: number;
   negative: number;
+  pitAvailabilityMissing: boolean;
 }
 
 function countMatches(text: string, list: string[]): number {
@@ -33,19 +34,27 @@ export async function runSentimentAnalysis(
   const endDate = context.asOfDate ?? context.endDate;
   const startDate = endDate ? daysBefore(endDate, 7) : undefined;
   const articles = await fetchCompanyNews(ticker, 5, { startDate, endDate });
+  const pitAvailabilityMissing = articles.some(
+    (article) =>
+      article &&
+      typeof article === 'object' &&
+      Boolean((article as Record<string, unknown>).__pitMissingAvailability),
+  );
   let positives = 0;
   let negatives = 0;
 
   for (const article of articles) {
-    const headline = (article.title ?? '').toLowerCase();
+    const headline = String(article.title ?? '').toLowerCase();
     positives += countMatches(headline, POSITIVE);
     negatives += countMatches(headline, NEGATIVE);
   }
 
   const total = Math.max(positives + negatives, 1);
   const rawScore = (positives - negatives) / total;
-  const score = clamp(rawScore, -1, 1);
-  const summary = `Positives ${positives} / Negatives ${negatives}`;
+  const score = clamp(rawScore * (pitAvailabilityMissing ? 0.85 : 1), -1, 1);
+  const summary = pitAvailabilityMissing
+    ? `Positives ${positives} / Negatives ${negatives} | PIT availability incomplete`
+    : `Positives ${positives} / Negatives ${negatives}`;
 
   return {
     ticker,
@@ -53,5 +62,6 @@ export async function runSentimentAnalysis(
     summary,
     positive: positives,
     negative: negatives,
+    pitAvailabilityMissing,
   };
 }

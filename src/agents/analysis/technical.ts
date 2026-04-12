@@ -15,7 +15,12 @@ export interface TechnicalSignal {
   confidence: number;
   signal: 'bullish' | 'bearish' | 'neutral';
   volatility: number;
-  bars: { date: string; close: number; volume: number }[];
+  bars: {
+    date: string;
+    close: number;
+    rawClose: number;
+    volume: number;
+  }[];
   returns: number[];
   summary: string;
   subSignals: {
@@ -65,6 +70,15 @@ function returnsFromCloses(closes: number[]): number[] {
   return out;
 }
 
+function toAdjustedClose(
+  bar: { close: number; adjustedClose?: number },
+): number {
+  if (Number.isFinite(bar.adjustedClose) && (bar.adjustedClose as number) > 0) {
+    return bar.adjustedClose as number;
+  }
+  return bar.close;
+}
+
 function rsi(closes: number[], period: number): number {
   if (closes.length < period + 1) return 50;
   const window = closes.slice(-(period + 1));
@@ -88,15 +102,20 @@ function signalToScore(signal: 'bullish' | 'bearish' | 'neutral', confidence: nu
   return 0;
 }
 
-function calculateTrendSignal(closes: number[], highs: number[], lows: number[]): SubSignal {
-  const ema8 = ema(closes, 8);
-  const ema21 = ema(closes, 21);
-  const ema55 = ema(closes, 55);
+function calculateTrendSignal(
+  adjustedCloses: number[],
+  highs: number[],
+  lows: number[],
+  rawCloses: number[],
+): SubSignal {
+  const ema8 = ema(adjustedCloses, 8);
+  const ema21 = ema(adjustedCloses, 21);
+  const ema55 = ema(adjustedCloses, 55);
 
   const upMoves: number[] = [];
   const downMoves: number[] = [];
   const trValues: number[] = [];
-  for (let i = 1; i < closes.length; i += 1) {
+  for (let i = 1; i < rawCloses.length; i += 1) {
     const upMove = highs[i] - highs[i - 1];
     const downMove = lows[i - 1] - lows[i];
     upMoves.push(upMove > downMove && upMove > 0 ? upMove : 0);
@@ -104,8 +123,8 @@ function calculateTrendSignal(closes: number[], highs: number[], lows: number[])
 
     const tr = Math.max(
       highs[i] - lows[i],
-      Math.abs(highs[i] - closes[i - 1]),
-      Math.abs(lows[i] - closes[i - 1]),
+      Math.abs(highs[i] - rawCloses[i - 1]),
+      Math.abs(lows[i] - rawCloses[i - 1]),
     );
     trValues.push(tr);
   }
@@ -258,18 +277,37 @@ export async function runTechnicalAnalysis(
           endDate: context.endDate,
           asOfDate: context.asOfDate,
         });
-  const closes = history.map((bar) => bar.close).filter(Number.isFinite);
-  const highs = history.map((bar) => bar.high).filter(Number.isFinite);
-  const lows = history.map((bar) => bar.low).filter(Number.isFinite);
-  const volumes = history.map((bar) => bar.volume).filter(Number.isFinite);
-  const returns = returnsFromCloses(closes);
+  const alignedBars = history
+    .map((bar) => ({
+      ...bar,
+      adjustedClose: toAdjustedClose(bar),
+    }))
+    .filter(
+      (bar) =>
+        Boolean(bar.date) &&
+        Number.isFinite(bar.open) &&
+        Number.isFinite(bar.high) &&
+        Number.isFinite(bar.low) &&
+        Number.isFinite(bar.close) &&
+        Number.isFinite(bar.adjustedClose) &&
+        Number.isFinite(bar.volume),
+    );
+  // Price-series policy:
+  // - adjusted closes: returns, momentum, moving-average and close-based indicators
+  // - raw OHLC: range/true-range style logic and execution references
+  const adjustedCloses = alignedBars.map((bar) => bar.adjustedClose);
+  const rawCloses = alignedBars.map((bar) => bar.close);
+  const highs = alignedBars.map((bar) => bar.high);
+  const lows = alignedBars.map((bar) => bar.low);
+  const volumes = alignedBars.map((bar) => bar.volume);
+  const returns = returnsFromCloses(adjustedCloses);
   const annualizedVolatility = stdDev(returns.slice(-21)) * Math.sqrt(252);
 
-  const trend = calculateTrendSignal(closes, highs, lows);
-  const meanReversion = calculateMeanReversionSignal(closes);
-  const momentum = calculateMomentumSignal(closes, volumes);
-  const volatility = calculateVolatilitySignal(closes);
-  const statArb = calculateStatArbSignal(closes);
+  const trend = calculateTrendSignal(adjustedCloses, highs, lows, rawCloses);
+  const meanReversion = calculateMeanReversionSignal(adjustedCloses);
+  const momentum = calculateMomentumSignal(adjustedCloses, volumes);
+  const volatility = calculateVolatilitySignal(adjustedCloses);
+  const statArb = calculateStatArbSignal(adjustedCloses);
 
   const weightedScore =
     trend.score * SIGNAL_CONFIG.technical.trendWeight +
@@ -290,9 +328,10 @@ export async function runTechnicalAnalysis(
     confidence,
     signal,
     volatility: annualizedVolatility,
-    bars: history.map((bar) => ({
+    bars: alignedBars.map((bar) => ({
       date: bar.date,
-      close: bar.close,
+      close: bar.adjustedClose,
+      rawClose: bar.close,
       volume: bar.volume,
     })),
     returns,

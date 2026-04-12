@@ -112,7 +112,7 @@ Main human-readable runbook (recommended first read):
 
 ### 🎯 Daily Signal Scanner
 
-The deterministic signal engine runs a small US/CA watchlist, blends technical, fundamental, sentiment, and risk reviews, and emits explainable BUY/SELL/HOLD/COVER alerts. It is broker-neutral and prints structured JSON that can be audited later.
+The deterministic signal engine runs a small US/CA watchlist, blends technical, fundamental, sentiment, and risk reviews, and emits explainable canonical BUY/SELL/HOLD alerts. It is broker-neutral and prints structured JSON that can be audited later.
 
 ```bash
 bun run scan:daily
@@ -123,7 +123,7 @@ Run for specific tickers:
 bun run scan:daily --tickers AAPL,SHOP,TD
 ```
 
-Include existing position context (enables deterministic `COVER` signals):
+Include existing position context (improves deterministic exit context):
 ```bash
 bun run scan:daily --tickers NVDA --position NVDA:short:120
 ```
@@ -229,6 +229,10 @@ Output files:
 - `.dexter/signal-engine/backtests/trial-backtest-AAPL-2026-01-01-2026-01-31.json`
 - `.dexter/signal-engine/backtests/trial-backtest-AAPL-2026-01-01-2026-01-31.csv`
 - `.dexter/signal-engine/reports/api-usage-backtest-AAPL-2026-01-01-2026-01-31.json`
+
+Price series policy:
+- adjusted close for returns, equity curves, moving averages, and close-based momentum
+- raw OHLC for range/candle logic and execution simulation
 
 Build ML training dataset (AAPL point-in-time features + labels):
 ```bash

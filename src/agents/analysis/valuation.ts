@@ -18,6 +18,7 @@ export interface ValuationSignal {
   score: number;
   confidence: number;
   signal: 'bullish' | 'bearish' | 'neutral';
+  pitAvailabilityMissing: boolean;
   marketCap: number;
   weightedGap: number;
   methods: {
@@ -101,6 +102,12 @@ export async function runValuationAnalysis(
     fetchCashFlowStatements(ticker, 8, range),
     fetchIncomeStatements(ticker, 8, range),
   ]);
+  const pitAvailabilityMissing =
+    Boolean((ratios as Record<string, unknown>).__pitMissingAvailability) ||
+    cashFlows.some((row) => Boolean((row as Record<string, unknown>).__pitMissingAvailability)) ||
+    incomeStatements.some((row) =>
+      Boolean((row as Record<string, unknown>).__pitMissingAvailability),
+    );
 
   const marketCap = asNumber(ratios.market_cap) ?? 0;
   const earningsGrowth = asNumber(ratios.earnings_growth) ?? 0.05;
@@ -161,7 +168,7 @@ export async function runValuationAnalysis(
     Math.abs(weightedGap) / SIGNAL_CONFIG.valuation.scoreScale,
     0,
     1,
-  );
+  ) * (pitAvailabilityMissing ? 0.85 : 1);
   const signal: ValuationSignal['signal'] =
     weightedGap > SIGNAL_CONFIG.valuation.gapSignalThreshold
       ? 'bullish'
@@ -174,6 +181,7 @@ export async function runValuationAnalysis(
     score,
     confidence,
     signal,
+    pitAvailabilityMissing,
     marketCap,
     weightedGap,
     methods: {
@@ -182,6 +190,8 @@ export async function runValuationAnalysis(
       multiples,
       residualIncome,
     },
-    summary: `${signal.toUpperCase()} valuation | weighted gap ${(weightedGap * 100).toFixed(1)}%`,
+    summary: pitAvailabilityMissing
+      ? `${signal.toUpperCase()} valuation | weighted gap ${(weightedGap * 100).toFixed(1)}% | PIT availability incomplete`
+      : `${signal.toUpperCase()} valuation | weighted gap ${(weightedGap * 100).toFixed(1)}%`,
   };
 }

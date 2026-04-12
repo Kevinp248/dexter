@@ -1,8 +1,13 @@
 import { RiskAssessment } from '../risk/risk.js';
 import { WatchlistEntry } from '../watchlists/watchlists.js';
 import { AnalysisContext } from '../agents/analysis/types.js';
+import {
+  CanonicalSignalAction,
+  ExtendedSignalAction,
+} from './action-normalization.js';
 
-export type SignalAction = 'BUY' | 'SELL' | 'HOLD' | 'COVER';
+export type SignalAction = CanonicalSignalAction;
+export type RawSignalAction = ExtendedSignalAction;
 
 export interface SignalComponent<T = Record<string, unknown>> {
   name: string;
@@ -133,6 +138,9 @@ export interface SignalPayload {
   action: SignalAction;
   confidence: number;
   finalAction: SignalAction;
+  rawAction: RawSignalAction;
+  rawFinalAction: RawSignalAction;
+  actionNormalizationNote: string | null;
   qualityGuard?: {
     suppressed: boolean;
     reason: string | null;

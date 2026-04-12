@@ -10,6 +10,9 @@ function makeAlert(overrides: Partial<SignalPayload> = {}): SignalPayload {
     action: 'HOLD',
     confidence: 29.05,
     finalAction: 'HOLD',
+    rawAction: 'HOLD',
+    rawFinalAction: 'HOLD',
+    actionNormalizationNote: null,
     dataCompleteness: {
       score: 0.92,
       status: 'pass',
@@ -150,8 +153,8 @@ describe('paper trade CSV append', () => {
     const content = await readFile(csvPath, 'utf8');
     const lines = content.trim().split(/\r?\n/);
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toContain('Date,Ticker,action,finalAction,Confidence');
-    expect(lines[1]).toContain('AAPL,HOLD,HOLD,29.05,skip');
-    expect(lines[2]).toContain('MSFT,HOLD,HOLD,29.05,skip');
+    expect(lines[0]).toContain('Date,Ticker,signalRawAction,action,finalAction,Confidence');
+    expect(lines[1]).toContain('AAPL,HOLD,HOLD,HOLD,29.05,skip');
+    expect(lines[2]).toContain('MSFT,HOLD,HOLD,HOLD,29.05,skip');
   });
 });

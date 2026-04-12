@@ -45,7 +45,7 @@ function getRegionCostBps(region: WatchlistEntry['region']): {
 }
 
 function isTradeAction(action: SignalAction): boolean {
-  return action === 'BUY' || action === 'SELL' || action === 'COVER';
+  return action === 'BUY' || action === 'SELL';
 }
 
 export function estimateTargetNotionalUsd(
@@ -56,7 +56,6 @@ export function estimateTargetNotionalUsd(
   position: PositionContext,
 ): number {
   if (action === 'SELL' && position.longShares <= 0) return 0;
-  if (action === 'COVER' && position.shortShares <= 0) return 0;
   if (!isTradeAction(action)) return 0;
 
   const confidenceScale = clamp(confidence / 100, SIGNAL_CONFIG.execution.confidenceScaleMin, 1);
@@ -73,7 +72,7 @@ export function estimateExecutionCosts(inputs: CostInputs): ExecutionCostEstimat
   );
   const oneWayCostBps = (spreadBps + slippageBps + feeBps) * costMultiplier;
   const holdingDays = SIGNAL_CONFIG.execution.holdingDays;
-  const borrowBps = inputs.action === 'COVER' || inputs.position.shortShares > 0
+  const borrowBps = inputs.position.shortShares > 0
     ? borrowDailyBps * holdingDays * costMultiplier
     : 0;
   const roundTripCostBps = oneWayCostBps * 2 + borrowBps;

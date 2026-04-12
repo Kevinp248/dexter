@@ -1,6 +1,6 @@
 import { RiskAssessment } from '../risk/risk.js';
 import { SIGNAL_CONFIG } from './config.js';
-import { PositionContext, SignalAction } from './models.js';
+import { PositionContext, RawSignalAction } from './models.js';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -10,7 +10,7 @@ export function resolveAction(
   score: number,
   risk: RiskAssessment,
   position: PositionContext,
-): SignalAction {
+): RawSignalAction {
   if (
     position.shortShares > 0 &&
     (score > SIGNAL_CONFIG.actions.coverScoreThreshold ||

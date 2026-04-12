@@ -13,6 +13,7 @@ export interface FundamentalSignal {
   score: number;
   confidence: number;
   signal: 'bullish' | 'bearish' | 'neutral';
+  pitAvailabilityMissing: boolean;
   metrics: {
     peRatio?: number;
     pbRatio?: number;
@@ -64,6 +65,9 @@ export async function runFundamentalAnalysis(
     asOfDate: context.asOfDate,
     endDate: context.endDate,
   });
+  const pitAvailabilityMissing = Boolean(
+    (ratios as Record<string, unknown>).__pitMissingAvailability,
+  );
 
   const metrics: FundamentalSignal['metrics'] = {
     peRatio: asNumber(ratios.pe_ratio),
@@ -205,7 +209,7 @@ export async function runFundamentalAnalysis(
   };
 
   const score = (pillars.profitability.score + pillars.growth.score + pillars.health.score + pillars.valuationRatios.score) / 4;
-  const confidence = Math.abs(score);
+  const confidence = Math.abs(score) * (pitAvailabilityMissing ? 0.85 : 1);
   const signal: FundamentalSignal['signal'] =
     score > SIGNAL_CONFIG.fundamentals.aggregateSignalThreshold
       ? 'bullish'
@@ -218,8 +222,11 @@ export async function runFundamentalAnalysis(
     score,
     confidence,
     signal,
+    pitAvailabilityMissing,
     metrics,
     pillars,
-    summary: `${signal.toUpperCase()} fundamentals | score ${score.toFixed(2)}`,
+    summary: pitAvailabilityMissing
+      ? `${signal.toUpperCase()} fundamentals | score ${score.toFixed(2)} | PIT availability incomplete`
+      : `${signal.toUpperCase()} fundamentals | score ${score.toFixed(2)}`,
   };
 }
