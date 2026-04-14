@@ -1,8 +1,13 @@
 import { RiskAssessment } from '../risk/risk.js';
 import { WatchlistEntry } from '../watchlists/watchlists.js';
 import { AnalysisContext } from '../agents/analysis/types.js';
+import {
+  CanonicalSignalAction,
+  ExtendedSignalAction,
+} from './action-normalization.js';
 
-export type SignalAction = 'BUY' | 'SELL' | 'HOLD' | 'COVER';
+export type SignalAction = CanonicalSignalAction;
+export type RawSignalAction = ExtendedSignalAction;
 
 export interface SignalComponent<T = Record<string, unknown>> {
   name: string;
@@ -44,6 +49,24 @@ export interface ScanOptions {
   executionConfig?: {
     costMultiplier?: number;
     minimumEdgeAfterCostsBps?: number;
+    assumptionVersion?: string;
+  };
+  earningsConfig?: {
+    enabled?: boolean;
+    blackoutTradingDays?: number;
+    missingCoveragePolicy?: 'warn_only' | 'suppress_buy';
+    maxCoverageAgeDays?: number;
+  };
+  regimeConfig?: {
+    enabled?: boolean;
+    strictBuyGateInRiskOff?: boolean;
+    buyScoreThresholdAddRiskOff?: number;
+    confidenceCapRiskOff?: number;
+    maxAllocationMultiplierRiskOff?: number;
+    confidenceCapUnknown?: number;
+    maxAllocationMultiplierUnknown?: number;
+    vixRiskOffThreshold?: number;
+    spySmaLookbackDays?: number;
   };
   portfolioContext?: {
     grossExposurePct?: number;
@@ -54,12 +77,27 @@ export interface ScanOptions {
 }
 
 export interface ExecutionCostEstimate {
+  expectedEdgePreCostBps: number;
   oneWayCostBps: number;
   roundTripCostBps: number;
+  costBreakdownBps: {
+    spread: number;
+    slippage: number;
+    fee: number;
+    borrow: number;
+    oneWay: number;
+    roundTrip: number;
+  };
   estimatedRoundTripCostUsd: number;
   expectedEdgeBps: number;
+  expectedEdgePostCostBps: number;
   expectedEdgeAfterCostsBps: number;
+  minEdgeThresholdBps: number;
   isTradeableAfterCosts: boolean;
+  costChangedAction: boolean;
+  assumptionSource: 'default' | 'override';
+  assumptionVersion: string;
+  assumptionSnapshotId: string;
 }
 
 export interface PortfolioConstraintEvaluation {
@@ -128,16 +166,73 @@ export interface DataCompleteness {
   notes: string[];
 }
 
+export interface ConfidenceMetadata {
+  agreement: number;
+  evidenceBreadth: number;
+  dataQuality: number;
+  riskSupport: number;
+  divergence: number;
+  direction: 'bullish' | 'bearish' | 'neutral';
+}
+
+export interface EarningsRiskAssessment {
+  nextEarningsDate: string | null;
+  tradingDaysToEarnings: number | null;
+  coverageStatus: 'covered' | 'missing' | 'stale';
+  inBlackoutWindow: boolean;
+  policyApplied:
+    | 'none'
+    | 'warn_only'
+    | 'buy_suppressed_to_hold_blackout'
+    | 'buy_suppressed_to_hold_missing_coverage';
+  reasonCode:
+    | 'EARNINGS_POLICY_DISABLED'
+    | 'EARNINGS_BLACKOUT_BUY_SUPPRESSED'
+    | 'EARNINGS_COVERAGE_WARN'
+    | 'EARNINGS_MISSING_COVERAGE_SUPPRESSED'
+    | 'EARNINGS_COVERAGE_STALE'
+    | 'EARNINGS_COVERAGE_OK';
+}
+
+export interface MarketRegimeAssessment {
+  state: 'risk_on' | 'risk_off' | 'regime_unknown';
+  reasonCode:
+    | 'REGIME_RISK_ON'
+    | 'REGIME_RISK_OFF_SPY_BELOW_SMA_OR_VIX_HIGH'
+    | 'REGIME_UNKNOWN_MISSING_SPY'
+    | 'REGIME_UNKNOWN_MISSING_VIX'
+    | 'REGIME_UNKNOWN_INSUFFICIENT_HISTORY';
+  inputs: {
+    asOfDate: string;
+    spyClose: number | null;
+    spySma: number | null;
+    vixClose: number | null;
+    lookbackDays: number;
+  };
+  policyAdjustmentsApplied: {
+    buyThresholdAdd: number;
+    confidenceCap: number | null;
+    maxAllocationMultiplier: number;
+    strictBuyGate: boolean;
+  };
+}
+
 export interface SignalPayload {
   ticker: string;
   action: SignalAction;
   confidence: number;
+  confidenceMetadata?: ConfidenceMetadata;
   finalAction: SignalAction;
+  rawAction: RawSignalAction;
+  rawFinalAction: RawSignalAction;
+  actionNormalizationNote: string | null;
   qualityGuard?: {
     suppressed: boolean;
     reason: string | null;
     fallbackRatio: number;
   };
+  earningsRisk: EarningsRiskAssessment;
+  marketRegime: MarketRegimeAssessment;
   dataCompleteness: DataCompleteness;
   delta: SignalDelta;
   regionalMarketCheck: RegionalMarketCheck;

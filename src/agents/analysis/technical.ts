@@ -15,7 +15,12 @@ export interface TechnicalSignal {
   confidence: number;
   signal: 'bullish' | 'bearish' | 'neutral';
   volatility: number;
-  bars: { date: string; close: number; volume: number }[];
+  bars: {
+    date: string;
+    close: number;
+    rawClose: number;
+    volume: number;
+  }[];
   returns: number[];
   summary: string;
   subSignals: {
@@ -23,7 +28,7 @@ export interface TechnicalSignal {
     meanReversion: SubSignal;
     momentum: SubSignal;
     volatility: SubSignal;
-    statArb: SubSignal;
+    macd: SubSignal;
   };
 }
 
@@ -53,6 +58,18 @@ function ema(values: number[], period: number): number {
   return out;
 }
 
+function emaSeries(values: number[], period: number): number[] {
+  if (!values.length) return [];
+  const alpha = 2 / (period + 1);
+  let prev = values[0];
+  const out: number[] = [prev];
+  for (let i = 1; i < values.length; i += 1) {
+    prev = alpha * values[i] + (1 - alpha) * prev;
+    out.push(prev);
+  }
+  return out;
+}
+
 function returnsFromCloses(closes: number[]): number[] {
   const out: number[] = [];
   for (let i = 1; i < closes.length; i += 1) {
@@ -63,6 +80,15 @@ function returnsFromCloses(closes: number[]): number[] {
     }
   }
   return out;
+}
+
+function toAdjustedClose(
+  bar: { close: number; adjustedClose?: number },
+): number {
+  if (Number.isFinite(bar.adjustedClose) && (bar.adjustedClose as number) > 0) {
+    return bar.adjustedClose as number;
+  }
+  return bar.close;
 }
 
 function rsi(closes: number[], period: number): number {
@@ -88,15 +114,20 @@ function signalToScore(signal: 'bullish' | 'bearish' | 'neutral', confidence: nu
   return 0;
 }
 
-function calculateTrendSignal(closes: number[], highs: number[], lows: number[]): SubSignal {
-  const ema8 = ema(closes, 8);
-  const ema21 = ema(closes, 21);
-  const ema55 = ema(closes, 55);
+function calculateTrendSignal(
+  adjustedCloses: number[],
+  highs: number[],
+  lows: number[],
+  rawCloses: number[],
+): SubSignal {
+  const ema8 = ema(adjustedCloses, 8);
+  const ema21 = ema(adjustedCloses, 21);
+  const ema55 = ema(adjustedCloses, 55);
 
   const upMoves: number[] = [];
   const downMoves: number[] = [];
   const trValues: number[] = [];
-  for (let i = 1; i < closes.length; i += 1) {
+  for (let i = 1; i < rawCloses.length; i += 1) {
     const upMove = highs[i] - highs[i - 1];
     const downMove = lows[i - 1] - lows[i];
     upMoves.push(upMove > downMove && upMove > 0 ? upMove : 0);
@@ -104,8 +135,8 @@ function calculateTrendSignal(closes: number[], highs: number[], lows: number[])
 
     const tr = Math.max(
       highs[i] - lows[i],
-      Math.abs(highs[i] - closes[i - 1]),
-      Math.abs(lows[i] - closes[i - 1]),
+      Math.abs(highs[i] - rawCloses[i - 1]),
+      Math.abs(lows[i] - rawCloses[i - 1]),
     );
     trValues.push(tr);
   }
@@ -227,22 +258,51 @@ function calculateVolatilitySignal(closes: number[]): SubSignal {
   };
 }
 
-function calculateStatArbSignal(closes: number[]): SubSignal {
-  const window = closes.slice(-30);
-  const mean = average(window);
-  const sd = stdDev(window) || 1;
-  const zScore = (closes[closes.length - 1] - mean) / sd;
+function calculateMacdSignal(adjustedCloses: number[]): SubSignal {
+  if (adjustedCloses.length < 35) {
+    return {
+      signal: 'neutral',
+      confidence: 0.5,
+      score: 0,
+      metrics: {
+        macdLine: 0,
+        signalLine: 0,
+        histogram: 0,
+        histogramSlope: 0,
+      },
+    };
+  }
+
+  const ema12 = emaSeries(adjustedCloses, 12);
+  const ema26 = emaSeries(adjustedCloses, 26);
+  const macdSeries = adjustedCloses.map((_, i) => ema12[i] - ema26[i]);
+  const signalSeries = emaSeries(macdSeries, 9);
+  const histogramSeries = macdSeries.map((value, i) => value - signalSeries[i]);
+
+  const macdLine = macdSeries[macdSeries.length - 1];
+  const signalLine = signalSeries[signalSeries.length - 1];
+  const histogram = histogramSeries[histogramSeries.length - 1];
+  const previousHistogram =
+    histogramSeries.length > 1 ? histogramSeries[histogramSeries.length - 2] : histogram;
+  const histogramSlope = histogram - previousHistogram;
+
   let signal: SubSignal['signal'] = 'neutral';
-  if (zScore < -SIGNAL_CONFIG.technical.statArbZScoreThreshold)
-    signal = 'bullish';
-  else if (zScore > SIGNAL_CONFIG.technical.statArbZScoreThreshold)
-    signal = 'bearish';
-  const confidence = clamp(Math.abs(zScore) / 3, 0, 1);
+  if (macdLine > signalLine && histogram > 0) signal = 'bullish';
+  else if (macdLine < signalLine && histogram < 0) signal = 'bearish';
+
+  const latestPrice = Math.max(adjustedCloses[adjustedCloses.length - 1], 1);
+  const normalizedAmplitude =
+    Math.abs(histogram) / (latestPrice * SIGNAL_CONFIG.technical.macdAmplitudeScale);
+  const normalizedSpread =
+    Math.abs(macdLine - signalLine) /
+    (latestPrice * SIGNAL_CONFIG.technical.macdSpreadScale);
+  const confidence = clamp((normalizedAmplitude + normalizedSpread) / 2, 0, 1);
+
   return {
     signal,
-    confidence,
+    confidence: signal === 'neutral' ? 0.5 : confidence,
     score: signalToScore(signal, confidence),
-    metrics: { zScore },
+    metrics: { macdLine, signalLine, histogram, histogramSlope },
   };
 }
 
@@ -258,25 +318,44 @@ export async function runTechnicalAnalysis(
           endDate: context.endDate,
           asOfDate: context.asOfDate,
         });
-  const closes = history.map((bar) => bar.close).filter(Number.isFinite);
-  const highs = history.map((bar) => bar.high).filter(Number.isFinite);
-  const lows = history.map((bar) => bar.low).filter(Number.isFinite);
-  const volumes = history.map((bar) => bar.volume).filter(Number.isFinite);
-  const returns = returnsFromCloses(closes);
+  const alignedBars = history
+    .map((bar) => ({
+      ...bar,
+      adjustedClose: toAdjustedClose(bar),
+    }))
+    .filter(
+      (bar) =>
+        Boolean(bar.date) &&
+        Number.isFinite(bar.open) &&
+        Number.isFinite(bar.high) &&
+        Number.isFinite(bar.low) &&
+        Number.isFinite(bar.close) &&
+        Number.isFinite(bar.adjustedClose) &&
+        Number.isFinite(bar.volume),
+    );
+  // Price-series policy:
+  // - adjusted closes: returns, momentum, moving-average and close-based indicators
+  // - raw OHLC: range/true-range style logic and execution references
+  const adjustedCloses = alignedBars.map((bar) => bar.adjustedClose);
+  const rawCloses = alignedBars.map((bar) => bar.close);
+  const highs = alignedBars.map((bar) => bar.high);
+  const lows = alignedBars.map((bar) => bar.low);
+  const volumes = alignedBars.map((bar) => bar.volume);
+  const returns = returnsFromCloses(adjustedCloses);
   const annualizedVolatility = stdDev(returns.slice(-21)) * Math.sqrt(252);
 
-  const trend = calculateTrendSignal(closes, highs, lows);
-  const meanReversion = calculateMeanReversionSignal(closes);
-  const momentum = calculateMomentumSignal(closes, volumes);
-  const volatility = calculateVolatilitySignal(closes);
-  const statArb = calculateStatArbSignal(closes);
+  const trend = calculateTrendSignal(adjustedCloses, highs, lows, rawCloses);
+  const meanReversion = calculateMeanReversionSignal(adjustedCloses);
+  const momentum = calculateMomentumSignal(adjustedCloses, volumes);
+  const volatility = calculateVolatilitySignal(adjustedCloses);
+  const macd = calculateMacdSignal(adjustedCloses);
 
   const weightedScore =
     trend.score * SIGNAL_CONFIG.technical.trendWeight +
     meanReversion.score * SIGNAL_CONFIG.technical.meanReversionWeight +
     momentum.score * SIGNAL_CONFIG.technical.momentumWeight +
     volatility.score * SIGNAL_CONFIG.technical.volatilityWeight +
-    statArb.score * SIGNAL_CONFIG.technical.statArbWeight;
+    macd.score * SIGNAL_CONFIG.technical.macdWeight;
   const score = clamp(weightedScore, -1, 1);
   const confidence = clamp(Math.abs(score), 0, 1);
 
@@ -290,19 +369,20 @@ export async function runTechnicalAnalysis(
     confidence,
     signal,
     volatility: annualizedVolatility,
-    bars: history.map((bar) => ({
+    bars: alignedBars.map((bar) => ({
       date: bar.date,
-      close: bar.close,
+      close: bar.adjustedClose,
+      rawClose: bar.close,
       volume: bar.volume,
     })),
     returns,
-    summary: `Trend ${trend.signal}, Momentum ${momentum.signal}, score ${score.toFixed(2)}`,
+    summary: `Trend ${trend.signal}, Momentum ${momentum.signal}, MACD ${macd.signal}, score ${score.toFixed(2)}`,
     subSignals: {
       trend,
       meanReversion,
       momentum,
       volatility,
-      statArb,
+      macd,
     },
   };
 }

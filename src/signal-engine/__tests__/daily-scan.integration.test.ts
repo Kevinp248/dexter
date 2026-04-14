@@ -7,14 +7,24 @@ function makeProviders(
   sentimentScore: number,
   technicalVolatility = 0.18,
   averageDailyDollarVolume = 2_000_000,
+  policyOverrides?: {
+    nextEarningsDate?: string | null;
+    spyCloses?: number[];
+    vixClose?: number | null;
+  },
 ): ScanProviders {
   const close = 100;
   const volume = Math.floor(averageDailyDollarVolume / close);
-  const bars = Array.from({ length: 30 }, (_, i) => ({
-    date: `2025-12-${String(i + 1).padStart(2, '0')}`,
-    close,
-    volume,
-  }));
+  const bars = Array.from({ length: 120 }, (_, i) => {
+    const dt = new Date('2025-08-01T00:00:00.000Z');
+    dt.setUTCDate(dt.getUTCDate() + i);
+    return {
+      date: dt.toISOString().slice(0, 10),
+      close,
+      rawClose: close,
+      volume,
+    };
+  });
 
   return {
     async runTechnicalAnalysis(ticker: string) {
@@ -25,14 +35,16 @@ function makeProviders(
         signal: technicalScore > 0.1 ? 'bullish' as const : technicalScore < -0.1 ? 'bearish' as const : 'neutral' as const,
         volatility: technicalVolatility,
         bars,
-        returns: Array.from({ length: 30 }, (_, i) => (i % 2 === 0 ? 0.01 : -0.005)),
+        returns: Array.from({ length: bars.length - 1 }, (_, i) =>
+          i % 2 === 0 ? 0.01 : -0.005,
+        ),
         summary: 'Mock technical',
         subSignals: {
           trend: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
           meanReversion: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
           momentum: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
           volatility: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
-          statArb: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
+          macd: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
         },
       };
     },
@@ -46,14 +58,18 @@ function makeProviders(
         metrics: {
           peRatio: 20,
           debtToEquity: 0.4,
+          roic: 0.11,
         },
         pillars: {
           profitability: { signal: 'neutral' as const, score: 0, details: 'mock' },
           growth: { signal: 'neutral' as const, score: 0, details: 'mock' },
           health: { signal: 'neutral' as const, score: 0, details: 'mock' },
+          cashFlowQuality: { signal: 'neutral' as const, score: 0, details: 'mock' },
+          capitalEfficiency: { signal: 'neutral' as const, score: 0, details: 'mock' },
           valuationRatios: { signal: 'neutral' as const, score: 0, details: 'mock' },
         },
         summary: 'Mock fundamentals',
+        pitAvailabilityMissing: false,
       };
     },
 
@@ -65,6 +81,13 @@ function makeProviders(
         signal: valuationScore > 0.1 ? 'bullish' as const : valuationScore < -0.1 ? 'bearish' as const : 'neutral' as const,
         marketCap: 100,
         weightedGap: valuationScore * 0.3,
+        context: {
+          sector: 'Technology',
+          fairPeBase: 20,
+          fairPeAdjusted: 22,
+          pegGrowthUsed: 0.05,
+          role: 'context_modifier' as const,
+        },
         methods: {
           dcf: { value: 100, gap: 0, signal: 'neutral' as const, details: 'mock' },
           ownerEarnings: { value: 100, gap: 0, signal: 'neutral' as const, details: 'mock' },
@@ -72,6 +95,7 @@ function makeProviders(
           residualIncome: { value: 100, gap: 0, signal: 'neutral' as const, details: 'mock' },
         },
         summary: 'Mock valuation',
+        pitAvailabilityMissing: false,
       };
     },
 
@@ -82,6 +106,25 @@ function makeProviders(
         summary: 'Mock sentiment',
         positive: sentimentScore > 0 ? 3 : 1,
         negative: sentimentScore < 0 ? 3 : 1,
+        provider: 'structured_news' as const,
+        articleCount: 4,
+        usedArticleCount: 4,
+        ignoredArticleCount: 0,
+        pitAvailabilityMissing: false,
+        evidence: [],
+      };
+    },
+    async fetchUpcomingEarningsDate() {
+      return policyOverrides?.nextEarningsDate !== undefined
+        ? policyOverrides.nextEarningsDate
+        : '2026-02-15';
+    },
+    async fetchMarketRegimeInputs() {
+      return {
+        spyCloses:
+          policyOverrides?.spyCloses ??
+          Array.from({ length: 220 }, (_, i) => 450 + i * 0.2),
+        vixClose: policyOverrides?.vixClose ?? 18,
       };
     },
   };
@@ -127,14 +170,15 @@ describe('runDailyScan deterministic integration', () => {
     expect(scan.alerts[0].finalAction).toBe('HOLD');
   });
 
-  test('golden scenario: short position and thesis flip -> COVER', async () => {
+  test('golden scenario: short position and thesis flip -> HOLD (canonical long-only)', async () => {
     const scan = await runDailyScan(
       { tickers: ['NVDA'], positions: { NVDA: { longShares: 0, shortShares: 100 } } },
       makeProviders(0.6, 0.5, 0.5, 0.3, 0.18),
     );
     expect(scan.alerts).toHaveLength(1);
-    expect(scan.alerts[0].action).toBe('COVER');
-    expect(scan.alerts[0].finalAction).toBe('COVER');
+    expect(scan.alerts[0].rawAction).toBe('COVER');
+    expect(scan.alerts[0].action).toBe('HOLD');
+    expect(scan.alerts[0].finalAction).toBe('HOLD');
   });
 
   test('portfolio cap breach downgrades BUY to HOLD', async () => {
@@ -170,6 +214,72 @@ describe('runDailyScan deterministic integration', () => {
     expect(scan.alerts[0].action).toBe('BUY');
     expect(scan.alerts[0].finalAction).toBe('HOLD');
     expect(scan.alerts[0].executionPlan.costEstimate.isTradeableAfterCosts).toBe(false);
+    expect(scan.alerts[0].executionPlan.costEstimate.costChangedAction).toBe(true);
+  });
+
+  test('earnings blackout suppresses BUY to HOLD', async () => {
+    const scan = await runDailyScan(
+      {
+        tickers: ['AAPL'],
+        analysisContext: { asOfDate: '2026-01-02' },
+      },
+      makeProviders(0.85, 0.75, 0.7, 0.5, 0.18, 2_000_000, {
+        nextEarningsDate: '2026-01-06',
+      }),
+    );
+    expect(scan.alerts).toHaveLength(1);
+    expect(scan.alerts[0].action).toBe('BUY');
+    expect(scan.alerts[0].finalAction).toBe('HOLD');
+    expect(scan.alerts[0].earningsRisk.reasonCode).toBe('EARNINGS_BLACKOUT_BUY_SUPPRESSED');
+  });
+
+  test('missing earnings coverage defaults to warn_only and does not suppress BUY', async () => {
+    const scan = await runDailyScan(
+      {
+        tickers: ['AAPL'],
+        analysisContext: { asOfDate: '2026-01-02' },
+        earningsConfig: { missingCoveragePolicy: 'warn_only' },
+      },
+      makeProviders(0.9, 0.8, 0.75, 0.5, 0.18, 2_000_000, {
+        nextEarningsDate: null,
+      }),
+    );
+    expect(scan.alerts).toHaveLength(1);
+    expect(scan.alerts[0].action).toBe('BUY');
+    expect(scan.alerts[0].finalAction).toBe('BUY');
+    expect(scan.alerts[0].earningsRisk.policyApplied).toBe('warn_only');
+    expect(scan.alerts[0].earningsRisk.reasonCode).toBe('EARNINGS_COVERAGE_WARN');
+  });
+
+  test('risk_off regime raises buy threshold and caps confidence/allocation', async () => {
+    const scan = await runDailyScan(
+      {
+        tickers: ['AAPL'],
+      },
+      makeProviders(0.6, 0.55, 0.5, 0.45, 0.18, 2_000_000, {
+        spyCloses: Array.from({ length: 220 }, (_, i) => 500 - i * 0.5),
+        vixClose: 32,
+      }),
+    );
+    expect(scan.alerts).toHaveLength(1);
+    expect(scan.alerts[0].marketRegime.state).toBe('risk_off');
+    expect(scan.alerts[0].finalAction).toBe('HOLD');
+    expect(scan.alerts[0].confidence).toBeLessThanOrEqual(70);
+    expect(scan.alerts[0].reasoning.risk.maxAllocation).toBeLessThan(0.2);
+  });
+
+  test('regime_unknown applies conservative caps with explicit reason', async () => {
+    const scan = await runDailyScan(
+      { tickers: ['AAPL'] },
+      makeProviders(0.9, 0.8, 0.75, 0.4, 0.18, 2_000_000, {
+        spyCloses: Array.from({ length: 20 }, () => 500),
+        vixClose: 18,
+      }),
+    );
+    expect(scan.alerts).toHaveLength(1);
+    expect(scan.alerts[0].marketRegime.state).toBe('regime_unknown');
+    expect(scan.alerts[0].marketRegime.reasonCode).toContain('REGIME_UNKNOWN');
+    expect(scan.alerts[0].confidence).toBeLessThanOrEqual(60);
   });
 
   test('high-correlation basket applies conservative correlation multiplier', async () => {

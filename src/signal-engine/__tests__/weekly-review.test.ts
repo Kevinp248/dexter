@@ -29,9 +29,9 @@ describe('weekly review', () => {
     expect(summary.fallbackCount).toBe(1);
     expect(summary.fallbackMissingRetryCount).toBe(0);
     expect(summary.finalActionBreakdown.BUY).toBe(1);
-    expect(summary.finalActionBreakdown.HOLD).toBe(1);
+    expect(summary.finalActionBreakdown.HOLD).toBe(2);
     expect(summary.finalActionBreakdown.SELL).toBe(1);
-    expect(summary.finalActionBreakdown.COVER).toBe(1);
+    expect(summary.finalActionBreakdown.COVER).toBeUndefined();
   });
 
   test('tracks missing fallback retry guidance', () => {

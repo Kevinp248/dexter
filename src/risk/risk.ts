@@ -62,9 +62,10 @@ export function reviewRisk(
     0,
     0.3,
   );
-  const corrMult = correlationMultiplier(
-    averageCorrelation ?? SIGNAL_CONFIG.risk.correlationBands.medium,
-  );
+  const corrMult =
+    averageCorrelation === null || averageCorrelation === undefined
+      ? SIGNAL_CONFIG.risk.correlationUnavailableMultiplier
+      : correlationMultiplier(averageCorrelation);
   const baseLimit = calculateVolatilityAdjustedLimit(volatility);
   const combinedLimitPct = baseLimit * corrMult;
   const minCorrMult = SIGNAL_CONFIG.risk.correlationMultipliers.veryHigh;
@@ -89,6 +90,9 @@ export function reviewRisk(
     (averageCorrelation ?? 0) > SIGNAL_CONFIG.risk.concentrationCorrelationThreshold
   )
     checks.push('High correlation to existing basket');
+  if (averageCorrelation === null || averageCorrelation === undefined) {
+    checks.push('Correlation unavailable; conservative diversification cap applied');
+  }
 
   return {
     ticker: technical.ticker,

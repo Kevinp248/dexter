@@ -29,8 +29,13 @@ export interface MlDatasetRow {
   aggregateScore: number;
   confidence: number;
   riskScore: number;
+  expectedEdgePreCostBps: number;
   expectedEdgeAfterCostsBps: number;
+  minEdgeThresholdBps: number;
   roundTripCostBps: number;
+  costChangedAction: boolean;
+  costAssumptionSource: 'default' | 'override';
+  costAssumptionVersion: string;
   action: string;
   finalAction: string;
   fallbackUsed: boolean;
@@ -127,8 +132,13 @@ function rowsToCsv(rows: MlDatasetRow[]): string {
     'aggregateScore',
     'confidence',
     'riskScore',
+    'expectedEdgePreCostBps',
     'expectedEdgeAfterCostsBps',
+    'minEdgeThresholdBps',
     'roundTripCostBps',
+    'costChangedAction',
+    'costAssumptionSource',
+    'costAssumptionVersion',
     'action',
     'finalAction',
     'fallbackUsed',
@@ -243,6 +253,8 @@ export async function buildMlDataset(
         }
         return valuationCache.get(key)!;
       },
+      fetchUpcomingEarningsDate: async () => null,
+      fetchMarketRegimeInputs: async () => ({ spyCloses: [], vixClose: null }),
     };
 
     const scan = await runDailyScan(
@@ -290,8 +302,13 @@ export async function buildMlDataset(
       aggregateScore: alert.reasoning.aggregateScore,
       confidence: alert.confidence,
       riskScore: alert.reasoning.risk.riskScore,
+      expectedEdgePreCostBps: alert.executionPlan.costEstimate.expectedEdgePreCostBps,
       expectedEdgeAfterCostsBps: alert.executionPlan.costEstimate.expectedEdgeAfterCostsBps,
+      minEdgeThresholdBps: alert.executionPlan.costEstimate.minEdgeThresholdBps,
       roundTripCostBps,
+      costChangedAction: alert.executionPlan.costEstimate.costChangedAction,
+      costAssumptionSource: alert.executionPlan.costEstimate.assumptionSource,
+      costAssumptionVersion: alert.executionPlan.costEstimate.assumptionVersion,
       action: alert.action,
       finalAction: alert.finalAction,
       fallbackUsed: alert.fallbackPolicy.hadFallback,

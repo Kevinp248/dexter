@@ -24,7 +24,7 @@ describe('signal quality dashboard', () => {
     expect(summary.byAction.BUY.count).toBe(3);
     expect(summary.byAction.BUY.hitRatePct).toBe(66.67);
     expect(summary.byAction.SELL.hitRatePct).toBe(100);
-    expect(summary.byAction.COVER.hitRatePct).toBe(100);
+    expect(summary.byAction.HOLD.hitRatePct).toBe(100);
 
     expect(summary.byConfidenceBucket.HIGH.count).toBe(2);
     expect(summary.byConfidenceBucket.HIGH.hitRatePct).toBe(50);
