@@ -173,11 +173,14 @@ function computeRoic(
       : null;
 
   const explicitInvestedCapital = selectFirstNumber(snapshot, ['invested_capital']);
-  const totalDebt = selectFirstNumber(snapshot, [
-    'total_debt',
-    'short_term_debt',
-    'long_term_debt',
-  ]);
+  const explicitTotalDebt = selectFirstNumber(snapshot, ['total_debt']);
+  const shortTermDebt = selectFirstNumber(snapshot, ['short_term_debt']);
+  const longTermDebt = selectFirstNumber(snapshot, ['long_term_debt']);
+  const inferredSummedDebt =
+    shortTermDebt !== undefined || longTermDebt !== undefined
+      ? (shortTermDebt ?? 0) + (longTermDebt ?? 0)
+      : undefined;
+  const totalDebt = explicitTotalDebt ?? inferredSummedDebt;
   const equity = selectFirstNumber(snapshot, [
     'total_equity',
     'shareholders_equity',

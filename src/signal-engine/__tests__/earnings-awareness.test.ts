@@ -46,4 +46,28 @@ describe('earnings awareness policy', () => {
     expect(result.action).toBe('SELL');
     expect(result.assessment.inBlackoutWindow).toBe(true);
   });
+
+  test('treats far-future upcoming earnings date as covered (not stale)', () => {
+    const result = applyEarningsPolicy({
+      action: 'BUY',
+      asOfDate: '2026-01-02',
+      nextEarningsDate: '2026-06-30',
+      config: { maxCoverageAgeDays: 45, missingCoveragePolicy: 'suppress_buy' },
+    });
+    expect(result.action).toBe('BUY');
+    expect(result.assessment.coverageStatus).toBe('covered');
+    expect(result.assessment.reasonCode).toBe('EARNINGS_COVERAGE_OK');
+  });
+
+  test('marks outdated past earnings date as stale', () => {
+    const result = applyEarningsPolicy({
+      action: 'BUY',
+      asOfDate: '2026-03-20',
+      nextEarningsDate: '2026-01-02',
+      config: { maxCoverageAgeDays: 45, missingCoveragePolicy: 'warn_only' },
+    });
+    expect(result.action).toBe('BUY');
+    expect(result.assessment.coverageStatus).toBe('stale');
+    expect(result.assessment.reasonCode).toBe('EARNINGS_COVERAGE_STALE');
+  });
 });

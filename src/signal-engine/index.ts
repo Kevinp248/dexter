@@ -73,8 +73,9 @@ const defaultProviders: ScanProviders = {
   fetchMarketRegimeInputs: async (context, lookbackDays = SIGNAL_CONFIG.regime.spySmaLookbackDays) => {
     const endDate = context?.asOfDate?.slice(0, 10);
     const volatilityTicker = SIGNAL_CONFIG.regime.volatilityTicker;
+    const spyCalendarWindowDays = regimeSpyCalendarWindowDays(lookbackDays);
     const [spyBars, vixBars] = await Promise.all([
-      fetchHistoricalPrices('SPY', lookbackDays + 30, { endDate }),
+      fetchHistoricalPrices('SPY', spyCalendarWindowDays, { endDate }),
       fetchHistoricalPrices(volatilityTicker, 20, { endDate }),
     ]);
     return {
@@ -85,6 +86,13 @@ const defaultProviders: ScanProviders = {
     };
   },
 };
+
+export function regimeSpyCalendarWindowDays(lookbackDays: number): number {
+  const safeLookback = Math.max(1, Math.floor(lookbackDays));
+  const multiplier = Math.max(1, SIGNAL_CONFIG.regime.spySmaCalendarBufferMultiplier);
+  const extraDays = Math.max(0, Math.floor(SIGNAL_CONFIG.regime.spySmaCalendarBufferExtraDays));
+  return Math.ceil(safeLookback * multiplier) + extraDays;
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);

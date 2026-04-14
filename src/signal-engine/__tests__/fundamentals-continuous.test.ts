@@ -104,4 +104,55 @@ describe('fundamentals continuous scoring', () => {
     );
     expect(stronger.score).toBeGreaterThan(weaker.score);
   });
+
+  test('prefers explicit total_debt when available for invested capital inference', async () => {
+    jest.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        snapshot: {
+          operating_income: 1_000,
+          effective_tax_rate: 0.2,
+          total_debt: 2_000,
+          short_term_debt: 300,
+          long_term_debt: 700,
+          total_equity: 3_000,
+          cash_and_equivalents: 500,
+        },
+      },
+      url: 'mock://financial-metrics',
+    });
+
+    const signal = await runFundamentalAnalysis('AAPL', {
+      asOfDate: '2026-01-31',
+      endDate: '2026-01-31',
+    });
+
+    // 2000 + 3000 - 500 = 4500 (should not use 300 + 700 here)
+    expect(signal.metrics.investedCapital).toBeCloseTo(4_500, 6);
+    expect(signal.metrics.roic).toBeCloseTo(800 / 4_500, 6);
+  });
+
+  test('sums short_term_debt and long_term_debt when total_debt is missing', async () => {
+    jest.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        snapshot: {
+          operating_income: 1_000,
+          effective_tax_rate: 0.2,
+          short_term_debt: 300,
+          long_term_debt: 700,
+          total_equity: 3_000,
+          cash_and_equivalents: 500,
+        },
+      },
+      url: 'mock://financial-metrics',
+    });
+
+    const signal = await runFundamentalAnalysis('AAPL', {
+      asOfDate: '2026-01-31',
+      endDate: '2026-01-31',
+    });
+
+    // (300 + 700) + 3000 - 500 = 3500
+    expect(signal.metrics.investedCapital).toBeCloseTo(3_500, 6);
+    expect(signal.metrics.roic).toBeCloseTo(800 / 3_500, 6);
+  });
 });

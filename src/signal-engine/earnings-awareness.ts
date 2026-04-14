@@ -98,7 +98,9 @@ export function applyEarningsPolicy(input: EarningsPolicyInput): EarningsPolicyR
     (Date.parse(`${nextEarningsDate}T00:00:00.000Z`) - Date.parse(`${asOfDate}T00:00:00.000Z`)) /
       86_400_000,
   );
-  const isStale = calendarDaysToEarnings < 0 || Math.abs(calendarDaysToEarnings) > resolvedConfig.maxCoverageAgeDays;
+  const isStale =
+    calendarDaysToEarnings < 0 &&
+    Math.abs(calendarDaysToEarnings) > resolvedConfig.maxCoverageAgeDays;
   const inBlackoutWindow =
     !isStale &&
     tradingDaysToEarnings >= 0 &&
