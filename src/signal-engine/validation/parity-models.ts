@@ -15,6 +15,7 @@ export interface ForwardReturnLabel {
   closeToCloseReturnPct: number | null;
   directionalReturnPct: number | null;
   directionalReturnAfterCostsPct: number | null;
+  directionalAfterCostsAssumption: 'buy_round_trip' | 'sell_zero_cost_avoidance' | 'none';
   isLabelAvailable: boolean;
   isDirectionalAfterCostsLabelAvailable: boolean;
 }

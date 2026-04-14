@@ -210,6 +210,7 @@ function buildForwardReturnLabel(
       closeToCloseReturnPct: null,
       directionalReturnPct: null,
       directionalReturnAfterCostsPct: null,
+      directionalAfterCostsAssumption: 'none',
       isLabelAvailable: false,
       isDirectionalAfterCostsLabelAvailable: false,
     };
@@ -224,6 +225,7 @@ function buildForwardReturnLabel(
       closeToCloseReturnPct: null,
       directionalReturnPct: null,
       directionalReturnAfterCostsPct: null,
+      directionalAfterCostsAssumption: 'none',
       isLabelAvailable: false,
       isDirectionalAfterCostsLabelAvailable: false,
     };
@@ -232,21 +234,26 @@ function buildForwardReturnLabel(
   const cost = roundTripCostBps / 10_000;
   let directionalReturnPct: number | null = null;
   let directionalReturnAfterCostsPct: number | null = null;
+  let directionalAfterCostsAssumption: ForwardReturnLabel['directionalAfterCostsAssumption'] =
+    'none';
   let isDirectionalAfterCostsLabelAvailable = false;
 
   if (finalAction === 'BUY') {
     directionalReturnPct = closeToCloseReturnPct;
     directionalReturnAfterCostsPct = directionalReturnPct - cost;
+    directionalAfterCostsAssumption = 'buy_round_trip';
     isDirectionalAfterCostsLabelAvailable = true;
   } else if (finalAction === 'SELL') {
     // Long-only SELL validation means avoid/exit long exposure, not short entry.
     directionalReturnPct = -closeToCloseReturnPct;
     directionalReturnAfterCostsPct = directionalReturnPct;
+    directionalAfterCostsAssumption = 'sell_zero_cost_avoidance';
     isDirectionalAfterCostsLabelAvailable = true;
   } else {
     // HOLD is no-trade in validation label semantics.
     directionalReturnPct = null;
     directionalReturnAfterCostsPct = null;
+    directionalAfterCostsAssumption = 'none';
   }
 
   return {
@@ -255,6 +262,7 @@ function buildForwardReturnLabel(
     directionalReturnPct: directionalReturnPct === null ? null : roundTo(directionalReturnPct),
     directionalReturnAfterCostsPct:
       directionalReturnAfterCostsPct === null ? null : roundTo(directionalReturnAfterCostsPct),
+    directionalAfterCostsAssumption,
     isLabelAvailable: true,
     isDirectionalAfterCostsLabelAvailable,
   };
@@ -311,24 +319,28 @@ function rowsToCsv(rows: ParityValidationRow[]): string {
     'forward1dCloseToCloseReturnPct',
     'forward1dDirectionalReturnPct',
     'forward1dDirectionalReturnAfterCostsPct',
+    'forward1dDirectionalAfterCostsAssumption',
     'forward1dLabelAvailable',
     'forward1dDirectionalAfterCostsLabelAvailable',
     'forward5dLabelBasis',
     'forward5dCloseToCloseReturnPct',
     'forward5dDirectionalReturnPct',
     'forward5dDirectionalReturnAfterCostsPct',
+    'forward5dDirectionalAfterCostsAssumption',
     'forward5dLabelAvailable',
     'forward5dDirectionalAfterCostsLabelAvailable',
     'forward10dLabelBasis',
     'forward10dCloseToCloseReturnPct',
     'forward10dDirectionalReturnPct',
     'forward10dDirectionalReturnAfterCostsPct',
+    'forward10dDirectionalAfterCostsAssumption',
     'forward10dLabelAvailable',
     'forward10dDirectionalAfterCostsLabelAvailable',
     'forward20dLabelBasis',
     'forward20dCloseToCloseReturnPct',
     'forward20dDirectionalReturnPct',
     'forward20dDirectionalReturnAfterCostsPct',
+    'forward20dDirectionalAfterCostsAssumption',
     'forward20dLabelAvailable',
     'forward20dDirectionalAfterCostsLabelAvailable',
   ] as const;
@@ -380,24 +392,28 @@ function rowsToCsv(rows: ParityValidationRow[]): string {
         row.forward1d.closeToCloseReturnPct,
         row.forward1d.directionalReturnPct,
         row.forward1d.directionalReturnAfterCostsPct,
+        row.forward1d.directionalAfterCostsAssumption,
         row.forward1d.isLabelAvailable,
         row.forward1d.isDirectionalAfterCostsLabelAvailable,
         row.forward5d.basis,
         row.forward5d.closeToCloseReturnPct,
         row.forward5d.directionalReturnPct,
         row.forward5d.directionalReturnAfterCostsPct,
+        row.forward5d.directionalAfterCostsAssumption,
         row.forward5d.isLabelAvailable,
         row.forward5d.isDirectionalAfterCostsLabelAvailable,
         row.forward10d.basis,
         row.forward10d.closeToCloseReturnPct,
         row.forward10d.directionalReturnPct,
         row.forward10d.directionalReturnAfterCostsPct,
+        row.forward10d.directionalAfterCostsAssumption,
         row.forward10d.isLabelAvailable,
         row.forward10d.isDirectionalAfterCostsLabelAvailable,
         row.forward20d.basis,
         row.forward20d.closeToCloseReturnPct,
         row.forward20d.directionalReturnPct,
         row.forward20d.directionalReturnAfterCostsPct,
+        row.forward20d.directionalAfterCostsAssumption,
         row.forward20d.isLabelAvailable,
         row.forward20d.isDirectionalAfterCostsLabelAvailable,
       ]

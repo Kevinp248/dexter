@@ -305,6 +305,7 @@ describe('parity validation harness', () => {
     const row = one.rows.find((item) => item.forward1d.isLabelAvailable);
     expect(row).toBeDefined();
     expect(row!.forward1d.basis).toBe('close_to_close');
+    expect(row!.forward1d.directionalAfterCostsAssumption).toBe('buy_round_trip');
     const expected =
       (row!.forward1d.directionalReturnPct as number) - row!.roundTripCostBps / 10_000;
     expect(row!.forward1d.directionalReturnAfterCostsPct).toBeCloseTo(expected, 8);
@@ -360,11 +361,13 @@ describe('parity validation harness', () => {
       sellRow!.forward1d.directionalReturnPct as number,
       8,
     );
+    expect(sellRow!.forward1d.directionalAfterCostsAssumption).toBe('sell_zero_cost_avoidance');
 
     const holdRow = holdReport.rows.find((row) => row.finalAction === 'HOLD');
     expect(holdRow).toBeDefined();
     expect(holdRow!.forward1d.directionalReturnPct).toBeNull();
     expect(holdRow!.forward1d.directionalReturnAfterCostsPct).toBeNull();
+    expect(holdRow!.forward1d.directionalAfterCostsAssumption).toBe('none');
     expect(holdRow!.forward1d.isDirectionalAfterCostsLabelAvailable).toBe(false);
   });
 
