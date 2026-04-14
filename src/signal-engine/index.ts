@@ -72,9 +72,10 @@ const defaultProviders: ScanProviders = {
     fetchUpcomingEarningsDate(ticker, context?.asOfDate),
   fetchMarketRegimeInputs: async (context, lookbackDays = SIGNAL_CONFIG.regime.spySmaLookbackDays) => {
     const endDate = context?.asOfDate?.slice(0, 10);
+    const volatilityTicker = SIGNAL_CONFIG.regime.volatilityTicker;
     const [spyBars, vixBars] = await Promise.all([
       fetchHistoricalPrices('SPY', lookbackDays + 30, { endDate }),
-      fetchHistoricalPrices('^VIX', 20, { endDate }),
+      fetchHistoricalPrices(volatilityTicker, 20, { endDate }),
     ]);
     return {
       spyCloses: spyBars
@@ -191,18 +192,20 @@ function getPositionContext(
 
 function estimatePriceFromTechnical(
   technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>,
-): number {
+): { price: number; usedFallback: boolean } {
   const latest = technical.bars[technical.bars.length - 1];
   if (latest && Number.isFinite(latest.rawClose) && latest.rawClose > 0)
-    return latest.rawClose;
-  if (latest && Number.isFinite(latest.close) && latest.close > 0) return latest.close;
-  return SIGNAL_CONFIG.execution.fallbackEstimatedPrice;
+    return { price: latest.rawClose, usedFallback: false };
+  if (latest && Number.isFinite(latest.close) && latest.close > 0)
+    return { price: latest.close, usedFallback: false };
+  return { price: SIGNAL_CONFIG.execution.fallbackEstimatedPrice, usedFallback: true };
 }
 
 function buildPositionPerformance(
   markPrice: number,
   position: PositionContext,
   positionState: PositionStateInput | undefined,
+  usedFallbackMarkPrice = false,
 ): PositionPerformance {
   const hasOpenPosition = position.longShares > 0 || position.shortShares > 0;
   const isCostBasisAvailable = Boolean(positionState);
@@ -252,6 +255,26 @@ function buildPositionPerformance(
       realizedPnlUsd: null,
       totalPnlUsd: null,
       notes: ['Missing cost basis in stored position ledger'],
+    };
+  }
+
+  if (usedFallbackMarkPrice && hasOpenPosition) {
+    return {
+      hasOpenPosition,
+      isCostBasisAvailable,
+      markPrice: roundTo(markPrice, 2),
+      longShares: position.longShares,
+      shortShares: position.shortShares,
+      longCostBasis: longCostBasis === null ? null : roundTo(longCostBasis, 4),
+      shortCostBasis: shortCostBasis === null ? null : roundTo(shortCostBasis, 4),
+      longMarketValueUsd: roundTo(longMarketValueUsd, 2),
+      shortMarketValueUsd: roundTo(shortMarketValueUsd, 2),
+      netExposureUsd: roundTo(netExposureUsd, 2),
+      unrealizedPnlUsd: null,
+      unrealizedPnlPct: null,
+      realizedPnlUsd: roundTo(positionState.realizedPnlUsd, 2),
+      totalPnlUsd: null,
+      notes: ['Mark price unavailable; fallback price used, unrealized/total PnL suppressed'],
     };
   }
 
@@ -760,7 +783,8 @@ export async function runDailyScan(
         SIGNAL_CONFIG.risk.maxAllocationMax,
       ),
     };
-    const estimatedPrice = estimatePriceFromTechnical(item.technical);
+    const estimatedPriceMeta = estimatePriceFromTechnical(item.technical);
+    const estimatedPrice = estimatedPriceMeta.price;
     const targetNotional = estimateTargetNotionalUsd(
       policyAction,
       effectiveRisk,
@@ -857,6 +881,7 @@ export async function runDailyScan(
       estimatedPrice,
       positionContext,
       options.positionStatesByTicker?.[item.ticker],
+      estimatedPriceMeta.usedFallback,
     );
 
     const components: SignalComponent[] = [

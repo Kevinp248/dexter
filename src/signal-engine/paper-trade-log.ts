@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, appendFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, appendFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { SignalPayload } from './models.js';
 import { normalizeActionForMode } from './action-normalization.js';
@@ -90,13 +90,26 @@ function normalizeForLog(
 
 async function ensureHeader(logPath: string): Promise<void> {
   await mkdir(path.dirname(logPath), { recursive: true });
+  const expectedHeader = PAPER_TRADE_HEADERS.join(',');
   try {
     const existing = await readFile(logPath, 'utf8');
-    if (existing.trim().length > 0) return;
+    const lines = existing.split(/\r?\n/).filter((line) => line.trim().length > 0);
+    if (!lines.length) {
+      await writeFile(logPath, `${expectedHeader}\n`, 'utf8');
+      return;
+    }
+    const currentHeader = lines[0].trim();
+    if (currentHeader === expectedHeader) return;
+
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const rotatedPath = `${logPath}.migrated-${ts}`;
+    await rename(logPath, rotatedPath);
+    await writeFile(logPath, `${expectedHeader}\n`, 'utf8');
+    return;
   } catch {
     // File doesn't exist yet, create below.
   }
-  await writeFile(logPath, `${PAPER_TRADE_HEADERS.join(',')}\n`, 'utf8');
+  await writeFile(logPath, `${expectedHeader}\n`, 'utf8');
 }
 
 function splitCsvLine(line: string): string[] {

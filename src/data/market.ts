@@ -38,6 +38,12 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
+function addDays(date: string, days: number): string {
+  const dt = new Date(`${date}T00:00:00.000Z`);
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
 function isDateInPast(date?: string): boolean {
   if (!date) return false;
   const normalized = date.slice(0, 10);
@@ -175,34 +181,67 @@ export async function fetchHistoricalPrices(
   const isHistoricalWindow = isDateInPast(endDateStr);
   priceFetchStats.paidApiCalls += 1;
   return safeApi(async () => {
-    const { data } = await api.get(
-      '/prices/',
-      {
-        ticker: ticker.toUpperCase(),
-        interval: 'day',
-        start_date: formatDate(startDate),
-        end_date: endDateStr,
-      },
-      { cacheable: true, ttlMs: isHistoricalWindow ? TTL_24H : TTL_1H },
-    );
+    const startDateStr = formatDate(startDate);
+    const parseBars = (rows: Array<Record<string, unknown>>): PriceBar[] =>
+      rows
+        .map((row) => ({
+          // FinancialDatasets can return `time` instead of `date` for price bars.
+          date: String(row.date ?? row.time ?? row.period ?? ''),
+          open: Number(row.open ?? row.price_open ?? 0),
+          high: Number(row.high ?? row.price_high ?? 0),
+          low: Number(row.low ?? row.price_low ?? 0),
+          close: Number(row.close ?? row.price_close ?? row.price ?? 0),
+          adjustedClose: Number(
+            row.adjusted_close ?? row.adj_close ?? row.close ?? row.price_close ?? row.price ?? 0,
+          ),
+          volume: Number(row.volume ?? 0),
+        }))
+        .filter((bar): bar is PriceBar => Boolean(bar.date))
+        .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
 
-    const rawBars = Array.isArray(data.prices) ? data.prices : [];
-    return rawBars
-      .map((row) => ({
-        // FinancialDatasets can return `time` instead of `date` for price bars.
-        date: String(row.date ?? row.time ?? row.period ?? ''),
-        open: Number(row.open ?? row.price_open ?? 0),
-        high: Number(row.high ?? row.price_high ?? 0),
-        low: Number(row.low ?? row.price_low ?? 0),
-        close: Number(row.close ?? row.price_close ?? row.price ?? 0),
-        adjustedClose: Number(
-          row.adjusted_close ?? row.adj_close ?? row.close ?? row.price_close ?? row.price ?? 0,
-        ),
-        volume: Number(row.volume ?? 0),
-      }))
-      .filter((bar): bar is PriceBar => Boolean(bar.date))
-      .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+    const callPrices = async (effectiveEndDate: string): Promise<PriceBar[]> => {
+      const { data } = await api.get(
+        '/prices/',
+        {
+          ticker: ticker.toUpperCase(),
+          interval: 'day',
+          start_date: startDateStr,
+          end_date: effectiveEndDate,
+        },
+        { cacheable: true, ttlMs: isHistoricalWindow ? TTL_24H : TTL_1H },
+      );
+      const rawBars = Array.isArray(data.prices)
+        ? (data.prices as Array<Record<string, unknown>>)
+        : [];
+      return parseBars(rawBars);
+    };
+
+    try {
+      return await callPrices(endDateStr);
+    } catch (error) {
+      const retryEndDate = resolveRetryEndDateForInvalidProviderDate(
+        endDateStr,
+        startDateStr,
+        error instanceof Error ? error.message : String(error),
+      );
+      if (!retryEndDate) throw error;
+      return callPrices(retryEndDate);
+    }
   }, [], 'fetchHistoricalPrices');
+}
+
+export function resolveRetryEndDateForInvalidProviderDate(
+  requestedEndDate: string,
+  startDate: string,
+  errorMessage: string,
+): string | null {
+  if (!/Invalid end_date|end_date must be today/i.test(errorMessage)) return null;
+  const providerTodayMatch = errorMessage.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  const candidateFromProvider = providerTodayMatch?.[1] ?? null;
+  const candidate = candidateFromProvider ?? addDays(requestedEndDate, -1);
+  if (candidate >= requestedEndDate) return null;
+  if (candidate < startDate) return null;
+  return candidate;
 }
 
 export async function fetchHistoricalPricesFromYahoo(

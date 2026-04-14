@@ -173,6 +173,7 @@ export interface SignalEngineConfig {
   };
   regime: {
     enabled: boolean;
+    volatilityTicker: string;
     spySmaLookbackDays: number;
     vixRiskOffThreshold: number;
     strictBuyGateInRiskOff: boolean;
@@ -370,6 +371,7 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
   },
   regime: {
     enabled: true,
+    volatilityTicker: 'VIXY',
     spySmaLookbackDays: 200,
     vixRiskOffThreshold: 25,
     strictBuyGateInRiskOff: false,

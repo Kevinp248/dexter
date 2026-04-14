@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { appendScanAlertsToPaperTradeLog } from '../paper-trade-log.js';
@@ -196,5 +196,36 @@ describe('paper trade CSV append', () => {
     expect(lines[0]).toContain('Date,Ticker,signalRawAction,action,finalAction,Confidence');
     expect(lines[1]).toContain('AAPL,HOLD,HOLD,HOLD,29.05,skip');
     expect(lines[2]).toContain('MSFT,HOLD,HOLD,HOLD,29.05,skip');
+  });
+
+  test('rotates legacy header and writes fresh schema header before append', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'dexter-paper-log-'));
+    const csvPath = path.join(dir, 'paper-trade-log.csv');
+    await writeFile(
+      csvPath,
+      [
+        'Date,Ticker,action,finalAction,Confidence,Decision,Direction',
+        '2026-04-08,AAPL,HOLD,HOLD,20,skip,none',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const result = await appendScanAlertsToPaperTradeLog(
+      {
+        generatedAt: '2026-04-09T18:40:44.324Z',
+        alerts: [makeAlert()],
+      },
+      csvPath,
+    );
+    expect(result.rowsAppended).toBe(1);
+
+    const files = await readdir(dir);
+    const rotated = files.find((file) => file.startsWith('paper-trade-log.csv.migrated-'));
+    expect(rotated).toBeTruthy();
+
+    const content = await readFile(csvPath, 'utf8');
+    const lines = content.trim().split(/\r?\n/);
+    expect(lines[0]).toContain('Date,Ticker,signalRawAction,action,finalAction,Confidence');
+    expect(lines[1]).toContain('AAPL,HOLD,HOLD,HOLD,29.05,skip');
   });
 });

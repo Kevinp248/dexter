@@ -448,4 +448,44 @@ describe('runDailyScan deterministic integration', () => {
     expect(perf.realizedPnlUsd).toBe(12.5);
     expect(perf.totalPnlUsd).toBe(62.5);
   });
+
+  test('suppresses unrealized/total PnL when fallback mark price is used', async () => {
+    const base = makeProviders(0.8, 0.7, 0.7, 0.3, 0.2);
+    const noPriceProviders: ScanProviders = {
+      ...base,
+      async runTechnicalAnalysis(ticker: string) {
+        const technical = await base.runTechnicalAnalysis(ticker);
+        return { ...technical, bars: [], returns: [] };
+      },
+    };
+    const scan = await runDailyScan(
+      {
+        tickers: ['AAPL'],
+        positions: {
+          AAPL: {
+            longShares: 10,
+            shortShares: 0,
+          },
+        },
+        positionStatesByTicker: {
+          AAPL: {
+            longShares: 10,
+            shortShares: 0,
+            longCostBasis: 95,
+            shortCostBasis: 0,
+            realizedPnlUsd: 12.5,
+            totalFeesUsd: 1,
+            lastTradeAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      },
+      noPriceProviders,
+    );
+    expect(scan.alerts).toHaveLength(1);
+    const perf = scan.alerts[0].positionPerformance;
+    expect(perf.markPrice).toBe(100);
+    expect(perf.unrealizedPnlUsd).toBeNull();
+    expect(perf.totalPnlUsd).toBeNull();
+    expect(perf.notes.join(' | ')).toContain('fallback price used');
+  });
 });

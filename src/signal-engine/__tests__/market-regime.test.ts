@@ -34,4 +34,15 @@ describe('market regime policy', () => {
     expect(result.assessment.state).toBe('regime_unknown');
     expect(result.assessment.reasonCode).toBe('REGIME_UNKNOWN_INSUFFICIENT_HISTORY');
   });
+
+  test('returns regime_unknown when volatility input is unavailable', () => {
+    const result = evaluateMarketRegime({
+      asOfDate: '2026-01-02',
+      spyCloses: Array.from({ length: 220 }, (_, i) => 450 + i * 0.2),
+      vixClose: null,
+      config: { spySmaLookbackDays: 200 },
+    });
+    expect(result.assessment.state).toBe('regime_unknown');
+    expect(result.assessment.reasonCode).toBe('REGIME_UNKNOWN_MISSING_VIX');
+  });
 });
