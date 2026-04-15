@@ -28,6 +28,7 @@ export interface UniverseManifest {
 
 export interface ParityWalkForwardConfig {
   manifestPath?: string;
+  tickers?: string[];
   startDate: string;
   endDate: string;
   walkForward: WalkForwardConfig;
@@ -66,6 +67,8 @@ export interface ParityWalkForwardReport {
     manifestName: string;
     tickers: UniverseTickerEntry[];
     tickerCount: number;
+    effectiveTickers: string[];
+    effectiveTickerCount: number;
     survivorshipBiasWarning: string;
   };
   dateWindow: {
@@ -202,6 +205,36 @@ function validateUniverseManifest(manifest: UniverseManifest): UniverseManifest 
   };
 }
 
+function normalizeTickerOverride(tickers?: string[]): string[] {
+  if (!tickers?.length) return [];
+  return Array.from(
+    new Set(
+      tickers
+        .map((ticker) => ticker.trim().toUpperCase())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+}
+
+function resolveEffectiveTickers(
+  manifest: UniverseManifest,
+  overrideTickers?: string[],
+): string[] {
+  const manifestTickerSet = new Set(manifest.tickers.map((item) => item.ticker));
+  const normalizedOverride = normalizeTickerOverride(overrideTickers);
+  if (!normalizedOverride.length) {
+    return manifest.tickers.map((item) => item.ticker).sort((a, b) => a.localeCompare(b));
+  }
+
+  const unknown = normalizedOverride.filter((ticker) => !manifestTickerSet.has(ticker));
+  if (unknown.length) {
+    throw new Error(
+      `Ticker override includes tickers not present in manifest: ${unknown.join(', ')}.`,
+    );
+  }
+  return normalizedOverride;
+}
+
 export async function loadUniverseManifest(manifestPath = DEFAULT_MANIFEST_PATH): Promise<UniverseManifest> {
   const raw = await readFile(manifestPath, 'utf8');
   const parsed = JSON.parse(raw) as UniverseManifest;
@@ -244,6 +277,7 @@ export async function runParityWalkForwardValidation(
 
   const manifest = await loadManifest(manifestPath);
   const normalizedManifest = validateUniverseManifest(manifest);
+  const effectiveTickers = resolveEffectiveTickers(normalizedManifest, config.tickers);
   const resolvedWalkForward = normalizeWalkForwardConfig(config.walkForward);
   const holdoutWindow = validateHoldoutWindow(
     config.endDate,
@@ -278,7 +312,7 @@ export async function runParityWalkForwardValidation(
 
     const validationReport = await buildParityValidation({
       ...(config.parityValidation ?? {}),
-      tickers: normalizedManifest.tickers.map((item) => item.ticker),
+      tickers: effectiveTickers,
       startDate: testStartDate,
       endDate: testEndDate,
     });
@@ -301,7 +335,7 @@ export async function runParityWalkForwardValidation(
     const holdoutEndDate = holdoutWindow.endDate as string;
     const holdoutValidation = await buildParityValidation({
       ...(config.parityValidation ?? {}),
-      tickers: normalizedManifest.tickers.map((item) => item.ticker),
+      tickers: effectiveTickers,
       startDate: holdoutStartDate,
       endDate: holdoutEndDate,
     });
@@ -325,6 +359,8 @@ export async function runParityWalkForwardValidation(
       manifestName: normalizedManifest.name,
       tickers: normalizedManifest.tickers.slice().sort((a, b) => a.ticker.localeCompare(b.ticker)),
       tickerCount: normalizedManifest.tickers.length,
+      effectiveTickers,
+      effectiveTickerCount: effectiveTickers.length,
       survivorshipBiasWarning,
     },
     dateWindow: {
