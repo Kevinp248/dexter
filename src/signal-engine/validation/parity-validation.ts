@@ -199,16 +199,20 @@ function buildForwardReturnLabel(
   tradingDates: string[],
   closesByDate: Map<string, number>,
   asOfDate: string,
+  finalAction: ParityValidationRow['finalAction'],
   horizon: number,
   roundTripCostBps: number,
 ): ForwardReturnLabel {
   const idx = tradingDates.indexOf(asOfDate);
   if (idx < 0 || idx + horizon >= tradingDates.length) {
     return {
-      returnPct: null,
-      returnAfterCostsPct: null,
-      isAvailable: false,
-      isAfterCostsAvailable: false,
+      basis: 'close_to_close',
+      closeToCloseReturnPct: null,
+      directionalReturnPct: null,
+      directionalReturnAfterCostsPct: null,
+      directionalAfterCostsAssumption: 'none',
+      isLabelAvailable: false,
+      isDirectionalAfterCostsLabelAvailable: false,
     };
   }
   const nowDate = tradingDates[idx];
@@ -217,19 +221,50 @@ function buildForwardReturnLabel(
   const futureClose = closesByDate.get(futureDate);
   if (!nowClose || !futureClose || nowClose <= 0) {
     return {
-      returnPct: null,
-      returnAfterCostsPct: null,
-      isAvailable: false,
-      isAfterCostsAvailable: false,
+      basis: 'close_to_close',
+      closeToCloseReturnPct: null,
+      directionalReturnPct: null,
+      directionalReturnAfterCostsPct: null,
+      directionalAfterCostsAssumption: 'none',
+      isLabelAvailable: false,
+      isDirectionalAfterCostsLabelAvailable: false,
     };
   }
-  const raw = futureClose / nowClose - 1;
+  const closeToCloseReturnPct = futureClose / nowClose - 1;
   const cost = roundTripCostBps / 10_000;
+  let directionalReturnPct: number | null = null;
+  let directionalReturnAfterCostsPct: number | null = null;
+  let directionalAfterCostsAssumption: ForwardReturnLabel['directionalAfterCostsAssumption'] =
+    'none';
+  let isDirectionalAfterCostsLabelAvailable = false;
+
+  if (finalAction === 'BUY') {
+    directionalReturnPct = closeToCloseReturnPct;
+    directionalReturnAfterCostsPct = directionalReturnPct - cost;
+    directionalAfterCostsAssumption = 'buy_round_trip';
+    isDirectionalAfterCostsLabelAvailable = true;
+  } else if (finalAction === 'SELL') {
+    // Long-only SELL validation means avoid/exit long exposure, not short entry.
+    directionalReturnPct = -closeToCloseReturnPct;
+    directionalReturnAfterCostsPct = directionalReturnPct;
+    directionalAfterCostsAssumption = 'sell_zero_cost_avoidance';
+    isDirectionalAfterCostsLabelAvailable = true;
+  } else {
+    // HOLD is no-trade in validation label semantics.
+    directionalReturnPct = null;
+    directionalReturnAfterCostsPct = null;
+    directionalAfterCostsAssumption = 'none';
+  }
+
   return {
-    returnPct: roundTo(raw),
-    returnAfterCostsPct: roundTo(raw - cost),
-    isAvailable: true,
-    isAfterCostsAvailable: true,
+    basis: 'close_to_close',
+    closeToCloseReturnPct: roundTo(closeToCloseReturnPct),
+    directionalReturnPct: directionalReturnPct === null ? null : roundTo(directionalReturnPct),
+    directionalReturnAfterCostsPct:
+      directionalReturnAfterCostsPct === null ? null : roundTo(directionalReturnAfterCostsPct),
+    directionalAfterCostsAssumption,
+    isLabelAvailable: true,
+    isDirectionalAfterCostsLabelAvailable,
   };
 }
 
@@ -280,18 +315,34 @@ function rowsToCsv(rows: ParityValidationRow[]): string {
     'qualityGuardSuppressed',
     'qualityGuardReason',
     'qualityGuardFallbackRatio',
-    'forward1dReturnPct',
-    'forward1dReturnAfterCostsPct',
-    'forward1dAvailable',
-    'forward5dReturnPct',
-    'forward5dReturnAfterCostsPct',
-    'forward5dAvailable',
-    'forward10dReturnPct',
-    'forward10dReturnAfterCostsPct',
-    'forward10dAvailable',
-    'forward20dReturnPct',
-    'forward20dReturnAfterCostsPct',
-    'forward20dAvailable',
+    'forward1dLabelBasis',
+    'forward1dCloseToCloseReturnPct',
+    'forward1dDirectionalReturnPct',
+    'forward1dDirectionalReturnAfterCostsPct',
+    'forward1dDirectionalAfterCostsAssumption',
+    'forward1dLabelAvailable',
+    'forward1dDirectionalAfterCostsLabelAvailable',
+    'forward5dLabelBasis',
+    'forward5dCloseToCloseReturnPct',
+    'forward5dDirectionalReturnPct',
+    'forward5dDirectionalReturnAfterCostsPct',
+    'forward5dDirectionalAfterCostsAssumption',
+    'forward5dLabelAvailable',
+    'forward5dDirectionalAfterCostsLabelAvailable',
+    'forward10dLabelBasis',
+    'forward10dCloseToCloseReturnPct',
+    'forward10dDirectionalReturnPct',
+    'forward10dDirectionalReturnAfterCostsPct',
+    'forward10dDirectionalAfterCostsAssumption',
+    'forward10dLabelAvailable',
+    'forward10dDirectionalAfterCostsLabelAvailable',
+    'forward20dLabelBasis',
+    'forward20dCloseToCloseReturnPct',
+    'forward20dDirectionalReturnPct',
+    'forward20dDirectionalReturnAfterCostsPct',
+    'forward20dDirectionalAfterCostsAssumption',
+    'forward20dLabelAvailable',
+    'forward20dDirectionalAfterCostsLabelAvailable',
   ] as const;
 
   const lines = [headers.join(',')];
@@ -337,18 +388,34 @@ function rowsToCsv(rows: ParityValidationRow[]): string {
         row.qualityGuardSuppressed,
         row.qualityGuardReason,
         row.qualityGuardFallbackRatio,
-        row.forward1d.returnPct,
-        row.forward1d.returnAfterCostsPct,
-        row.forward1d.isAvailable,
-        row.forward5d.returnPct,
-        row.forward5d.returnAfterCostsPct,
-        row.forward5d.isAvailable,
-        row.forward10d.returnPct,
-        row.forward10d.returnAfterCostsPct,
-        row.forward10d.isAvailable,
-        row.forward20d.returnPct,
-        row.forward20d.returnAfterCostsPct,
-        row.forward20d.isAvailable,
+        row.forward1d.basis,
+        row.forward1d.closeToCloseReturnPct,
+        row.forward1d.directionalReturnPct,
+        row.forward1d.directionalReturnAfterCostsPct,
+        row.forward1d.directionalAfterCostsAssumption,
+        row.forward1d.isLabelAvailable,
+        row.forward1d.isDirectionalAfterCostsLabelAvailable,
+        row.forward5d.basis,
+        row.forward5d.closeToCloseReturnPct,
+        row.forward5d.directionalReturnPct,
+        row.forward5d.directionalReturnAfterCostsPct,
+        row.forward5d.directionalAfterCostsAssumption,
+        row.forward5d.isLabelAvailable,
+        row.forward5d.isDirectionalAfterCostsLabelAvailable,
+        row.forward10d.basis,
+        row.forward10d.closeToCloseReturnPct,
+        row.forward10d.directionalReturnPct,
+        row.forward10d.directionalReturnAfterCostsPct,
+        row.forward10d.directionalAfterCostsAssumption,
+        row.forward10d.isLabelAvailable,
+        row.forward10d.isDirectionalAfterCostsLabelAvailable,
+        row.forward20d.basis,
+        row.forward20d.closeToCloseReturnPct,
+        row.forward20d.directionalReturnPct,
+        row.forward20d.directionalReturnAfterCostsPct,
+        row.forward20d.directionalAfterCostsAssumption,
+        row.forward20d.isLabelAvailable,
+        row.forward20d.isDirectionalAfterCostsLabelAvailable,
       ]
         .map(toCsvCell)
         .join(','),
@@ -508,10 +575,38 @@ export async function buildParityValidationReport(
           qualityGuardSuppressed: Boolean(alert.qualityGuard?.suppressed),
           qualityGuardReason: alert.qualityGuard?.reason ?? null,
           qualityGuardFallbackRatio: roundTo(alert.qualityGuard?.fallbackRatio ?? 0, 8),
-          forward1d: buildForwardReturnLabel(tickerDates, closes, asOfDate, 1, roundTripCostBps),
-          forward5d: buildForwardReturnLabel(tickerDates, closes, asOfDate, 5, roundTripCostBps),
-          forward10d: buildForwardReturnLabel(tickerDates, closes, asOfDate, 10, roundTripCostBps),
-          forward20d: buildForwardReturnLabel(tickerDates, closes, asOfDate, 20, roundTripCostBps),
+          forward1d: buildForwardReturnLabel(
+            tickerDates,
+            closes,
+            asOfDate,
+            alert.finalAction,
+            1,
+            roundTripCostBps,
+          ),
+          forward5d: buildForwardReturnLabel(
+            tickerDates,
+            closes,
+            asOfDate,
+            alert.finalAction,
+            5,
+            roundTripCostBps,
+          ),
+          forward10d: buildForwardReturnLabel(
+            tickerDates,
+            closes,
+            asOfDate,
+            alert.finalAction,
+            10,
+            roundTripCostBps,
+          ),
+          forward20d: buildForwardReturnLabel(
+            tickerDates,
+            closes,
+            asOfDate,
+            alert.finalAction,
+            20,
+            roundTripCostBps,
+          ),
         });
       }
     }

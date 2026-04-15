@@ -11,10 +11,13 @@ export interface InputProvenance {
 }
 
 export interface ForwardReturnLabel {
-  returnPct: number | null;
-  returnAfterCostsPct: number | null;
-  isAvailable: boolean;
-  isAfterCostsAvailable: boolean;
+  basis: 'close_to_close';
+  closeToCloseReturnPct: number | null;
+  directionalReturnPct: number | null;
+  directionalReturnAfterCostsPct: number | null;
+  directionalAfterCostsAssumption: 'buy_round_trip' | 'sell_zero_cost_avoidance' | 'none';
+  isLabelAvailable: boolean;
+  isDirectionalAfterCostsLabelAvailable: boolean;
 }
 
 export interface ParityValidationRow {

@@ -28,16 +28,31 @@ function makeBars(startDate: string, days: number, startPrice: number): PriceBar
 function makeProviders(capture?: {
   regimeAsOfDates?: string[];
   earningsAsOfByTicker?: Array<{ ticker: string; asOfDate: string | null }>;
-}): ScanProviders {
+},
+scores: {
+  technical?: number;
+  fundamentals?: number;
+  valuation?: number;
+  sentiment?: number;
+} = {}): ScanProviders {
   const bars = makeBars('2026-01-01', 260, 100);
+  const technicalScore = scores.technical ?? 0.8;
+  const fundamentalsScore = scores.fundamentals ?? 0.65;
+  const valuationScore = scores.valuation ?? 0.4;
+  const sentimentScore = scores.sentiment ?? 0.35;
 
   return {
     async runTechnicalAnalysis(ticker: string) {
       return {
         ticker,
-        score: 0.8,
-        confidence: 0.8,
-        signal: 'bullish' as const,
+        score: technicalScore,
+        confidence: Math.abs(technicalScore),
+        signal:
+          technicalScore > 0.1
+            ? 'bullish'
+            : technicalScore < -0.1
+              ? 'bearish'
+              : 'neutral',
         volatility: 0.18,
         bars: bars.slice(-120).map((bar) => ({
           date: bar.date,
@@ -59,9 +74,14 @@ function makeProviders(capture?: {
     async runFundamentalAnalysis(ticker: string) {
       return {
         ticker,
-        score: 0.65,
-        confidence: 0.8,
-        signal: 'bullish' as const,
+        score: fundamentalsScore,
+        confidence: Math.abs(fundamentalsScore),
+        signal:
+          fundamentalsScore > 0.1
+            ? 'bullish'
+            : fundamentalsScore < -0.1
+              ? 'bearish'
+              : 'neutral',
         pitAvailabilityMissing: false,
         metrics: { peRatio: 20, debtToEquity: 0.4, roic: 0.12 },
         pillars: {
@@ -78,10 +98,10 @@ function makeProviders(capture?: {
     async runSentimentAnalysis(ticker: string) {
       return {
         ticker,
-        score: 0.35,
+        score: sentimentScore,
         summary: 'mock sentiment',
-        positive: 3,
-        negative: 1,
+        positive: sentimentScore > 0 ? 3 : 1,
+        negative: sentimentScore < 0 ? 3 : 1,
         provider: 'structured_news' as const,
         articleCount: 5,
         usedArticleCount: 5,
@@ -93,9 +113,14 @@ function makeProviders(capture?: {
     async runValuationAnalysis(ticker: string) {
       return {
         ticker,
-        score: 0.4,
-        confidence: 0.7,
-        signal: 'bullish' as const,
+        score: valuationScore,
+        confidence: Math.abs(valuationScore),
+        signal:
+          valuationScore > 0.1
+            ? 'bullish'
+            : valuationScore < -0.1
+              ? 'bearish'
+              : 'neutral',
         pitAvailabilityMissing: false,
         marketCap: 100,
         weightedGap: 0.1,
@@ -249,7 +274,7 @@ describe('parity validation harness', () => {
     expect(report.warnings.some((warning) => warning.includes('No upcoming earnings date'))).toBe(true);
   });
 
-  test('forward-return labels are deterministic and after-cost values subtract documented costs', async () => {
+  test('forward-return labels are deterministic and action-aware after-costs are BUY-only', async () => {
     const providers = makeProviders();
     const bars = makeBars('2026-01-01', 30, 100);
 
@@ -277,10 +302,73 @@ describe('parity validation harness', () => {
     );
 
     expect(one.rows).toEqual(two.rows);
-    const row = one.rows.find((item) => item.forward1d.isAvailable);
+    const row = one.rows.find((item) => item.forward1d.isLabelAvailable);
     expect(row).toBeDefined();
-    const expected = (row!.forward1d.returnPct as number) - row!.roundTripCostBps / 10_000;
-    expect(row!.forward1d.returnAfterCostsPct).toBeCloseTo(expected, 8);
+    expect(row!.forward1d.basis).toBe('close_to_close');
+    expect(row!.forward1d.directionalAfterCostsAssumption).toBe('buy_round_trip');
+    const expected =
+      (row!.forward1d.directionalReturnPct as number) - row!.roundTripCostBps / 10_000;
+    expect(row!.forward1d.directionalReturnAfterCostsPct).toBeCloseTo(expected, 8);
+  });
+
+  test('SELL labels invert direction and HOLD labels avoid generic trade-cost deduction', async () => {
+    const bars = makeBars('2026-01-01', 30, 100);
+    const sellProviders = makeProviders(
+      undefined,
+      { technical: -0.9, fundamentals: -0.8, valuation: -0.7, sentiment: -0.5 },
+    );
+    const holdProviders = makeProviders(
+      undefined,
+      { technical: 0.02, fundamentals: 0.01, valuation: 0.0, sentiment: 0.0 },
+    );
+
+    const sellReport = await buildParityValidationReport(
+      {
+        tickers: ['AAPL'],
+        startDate: bars[0].date,
+        endDate: bars[bars.length - 1].date,
+        scanOptions: {
+          positions: {
+            AAPL: { longShares: 10, shortShares: 0 },
+          },
+        },
+      },
+      {
+        baseProviders: sellProviders,
+        fetchHistoricalPricesFn: async () => bars,
+      },
+    );
+    const holdReport = await buildParityValidationReport(
+      {
+        tickers: ['AAPL'],
+        startDate: bars[0].date,
+        endDate: bars[bars.length - 1].date,
+      },
+      {
+        baseProviders: holdProviders,
+        fetchHistoricalPricesFn: async () => bars,
+      },
+    );
+
+    const sellRow = sellReport.rows.find((row) => row.forward1d.isLabelAvailable);
+    expect(sellRow).toBeDefined();
+    expect(sellRow!.finalAction).toBe('SELL');
+    expect(sellRow!.forward1d.directionalReturnPct).toBeCloseTo(
+      -(sellRow!.forward1d.closeToCloseReturnPct as number),
+      8,
+    );
+    expect(sellRow!.forward1d.directionalReturnAfterCostsPct).toBeCloseTo(
+      sellRow!.forward1d.directionalReturnPct as number,
+      8,
+    );
+    expect(sellRow!.forward1d.directionalAfterCostsAssumption).toBe('sell_zero_cost_avoidance');
+
+    const holdRow = holdReport.rows.find((row) => row.finalAction === 'HOLD');
+    expect(holdRow).toBeDefined();
+    expect(holdRow!.forward1d.directionalReturnPct).toBeNull();
+    expect(holdRow!.forward1d.directionalReturnAfterCostsPct).toBeNull();
+    expect(holdRow!.forward1d.directionalAfterCostsAssumption).toBe('none');
+    expect(holdRow!.forward1d.isDirectionalAfterCostsLabelAvailable).toBe(false);
   });
 
   test('multi-ticker validation preserves cross-ticker scan context', async () => {
