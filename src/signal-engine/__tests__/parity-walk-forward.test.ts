@@ -42,6 +42,13 @@ function mockValidationReport(
       rowsWithUnavailableEarningsProvenance: 0,
       rowsWithUnavailableRegimeProvenance: 0,
     },
+    apiUsage: {
+      totalCalls: 12,
+      endpoints: [
+        { endpoint: '/prices/', calls: 8 },
+        { endpoint: '/news', calls: 4 },
+      ],
+    },
     rows: [],
     warnings,
   };
@@ -77,6 +84,14 @@ function mockMetricsReport(sourceRows: number, warnings: string[] = []): ParityM
       fallbackEventCountTotal: 0,
       dataCompletenessStatusCounts: [],
       missingCriticalFieldCounts: [],
+    },
+    actionAttribution: {
+      rawActionCounts: [],
+      finalActionCounts: [],
+      rawSellNormalizedOrSuppressedToHoldCount: 0,
+      qualityGuardSuppressedCount: 0,
+      dataCompletenessFailCount: 0,
+      fallbackRowsCount: 0,
     },
     warnings,
   };
@@ -250,6 +265,135 @@ describe('parity walk-forward orchestration', () => {
     expect(report.walkForward.foldEvaluations.length).toBe(report.walkForward.folds.length);
     expect(validationCalls.length).toBe(report.walkForward.folds.length + 1);
     expect(metricsCalls.length).toBe(report.walkForward.folds.length + 1);
+    expect(report.walkForward.foldEvaluations.every((fold) => fold.validationApiUsage.totalCalls >= 0)).toBe(
+      true,
+    );
+    expect(
+      report.walkForward.foldEvaluations.every(
+        (fold) => fold.validationApiUsageSemantics === 'delta_within_walk_forward_run',
+      ),
+    ).toBe(true);
+    expect(
+      report.walkForward.foldEvaluations.every(
+        (fold) => fold.validationApiUsageCumulative.totalCalls >= fold.validationApiUsage.totalCalls,
+      ),
+    ).toBe(true);
+    expect(report.holdout?.validationApiUsage.totalCalls).toBeGreaterThanOrEqual(0);
+    expect(report.holdout?.validationApiUsageSemantics).toBe('delta_within_walk_forward_run');
+    expect(report.holdout!.validationApiUsageCumulative.totalCalls).toBeGreaterThanOrEqual(
+      report.holdout!.validationApiUsage.totalCalls,
+    );
+  });
+
+  test('walk-forward passes resetApiUsageAtStart false by default across fold and holdout validation calls', async () => {
+    const orderedDates = makeDates('2026-01-01', 25);
+    const resetFlags: Array<boolean | undefined> = [];
+    await runParityWalkForwardValidation(
+      {
+        startDate: '2026-01-01',
+        endDate: '2026-01-25',
+        holdoutStartDate: '2026-02-01',
+        holdoutEndDate: '2026-02-10',
+        walkForward: {
+          initialTrainSize: 8,
+          testSize: 4,
+          stepSize: 4,
+          purgeSize: 1,
+          embargoSize: 1,
+        },
+      },
+      {
+        loadManifestFn: async () => ({ name: 'test', tickers: [{ ticker: 'AAPL' }] }),
+        orderedDatesFn: () => orderedDates,
+        buildParityValidationReportFn: async (cfg) => {
+          resetFlags.push(cfg?.resetApiUsageAtStart);
+          return mockValidationReport(cfg?.startDate ?? '2026-01-01', cfg?.endDate ?? '2026-01-01', 1);
+        },
+        buildParityMetricsReportFn: () => mockMetricsReport(1),
+      },
+    );
+
+    expect(resetFlags.length).toBeGreaterThan(0);
+    expect(resetFlags.every((flag) => flag === false)).toBe(true);
+  });
+
+  test('walk-forward preserves explicit resetApiUsageAtStart override when provided', async () => {
+    const orderedDates = makeDates('2026-01-01', 16);
+    const resetFlags: Array<boolean | undefined> = [];
+    const report = await runParityWalkForwardValidation(
+      {
+        startDate: '2026-01-01',
+        endDate: '2026-01-16',
+        parityValidation: { resetApiUsageAtStart: true },
+        walkForward: {
+          initialTrainSize: 5,
+          testSize: 3,
+          stepSize: 3,
+          purgeSize: 1,
+          embargoSize: 1,
+        },
+      },
+      {
+        loadManifestFn: async () => ({ name: 'test', tickers: [{ ticker: 'AAPL' }] }),
+        orderedDatesFn: () => orderedDates,
+        buildParityValidationReportFn: async (cfg) => {
+          resetFlags.push(cfg?.resetApiUsageAtStart);
+          return mockValidationReport(cfg?.startDate ?? '2026-01-01', cfg?.endDate ?? '2026-01-01', 1);
+        },
+        buildParityMetricsReportFn: () => mockMetricsReport(1),
+      },
+    );
+
+    expect(resetFlags.length).toBe(report.walkForward.folds.length);
+    expect(resetFlags.every((flag) => flag === true)).toBe(true);
+    expect(
+      report.walkForward.foldEvaluations.every(
+        (fold) => fold.validationApiUsageSemantics === 'per_validation_run_snapshot',
+      ),
+    ).toBe(true);
+  });
+
+  test('walk-forward API usage reporting exposes per-fold deltas and cumulative snapshots clearly', async () => {
+    const orderedDates = makeDates('2026-01-01', 16);
+    const snapshots = [
+      { totalCalls: 10, endpoints: [{ endpoint: '/prices/', calls: 7 }, { endpoint: '/news', calls: 3 }] },
+      { totalCalls: 16, endpoints: [{ endpoint: '/prices/', calls: 11 }, { endpoint: '/news', calls: 5 }] },
+    ];
+    let callIndex = 0;
+    const report = await runParityWalkForwardValidation(
+      {
+        startDate: '2026-01-01',
+        endDate: '2026-01-16',
+        walkForward: {
+          initialTrainSize: 5,
+          testSize: 3,
+          stepSize: 3,
+          purgeSize: 1,
+          embargoSize: 1,
+          maxFolds: 2,
+        },
+      },
+      {
+        loadManifestFn: async () => ({ name: 'test', tickers: [{ ticker: 'AAPL' }] }),
+        orderedDatesFn: () => orderedDates,
+        buildParityValidationReportFn: async (cfg) => {
+          const base = mockValidationReport(cfg?.startDate ?? '2026-01-01', cfg?.endDate ?? '2026-01-01', 1);
+          const snapshot = snapshots[Math.min(callIndex, snapshots.length - 1)];
+          callIndex += 1;
+          return { ...base, apiUsage: snapshot };
+        },
+        buildParityMetricsReportFn: () => mockMetricsReport(1),
+      },
+    );
+
+    expect(report.walkForward.foldEvaluations).toHaveLength(2);
+    expect(report.walkForward.foldEvaluations[0].validationApiUsage.totalCalls).toBe(10);
+    expect(report.walkForward.foldEvaluations[0].validationApiUsageCumulative.totalCalls).toBe(10);
+    expect(report.walkForward.foldEvaluations[1].validationApiUsage.totalCalls).toBe(6);
+    expect(report.walkForward.foldEvaluations[1].validationApiUsageCumulative.totalCalls).toBe(16);
+    expect(report.walkForward.foldEvaluations[1].validationApiUsage.endpoints).toEqual(
+      expect.arrayContaining([{ endpoint: '/prices/', calls: 4 }, { endpoint: '/news', calls: 2 }]),
+    );
   });
 
   test('holdout behavior remains unchanged with ticker override', async () => {

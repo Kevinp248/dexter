@@ -4,7 +4,7 @@ import { buildParityMetricsReport, ParityMetricsConfig, ParityMetricsReport } fr
 import {
   buildParityValidationReport,
 } from './parity-validation.js';
-import { ParityValidationConfig } from './parity-models.js';
+import { ApiUsageSummary, ParityValidationConfig } from './parity-models.js';
 import {
   buildPurgedWalkForwardFolds,
   validatePurgedWalkForwardFolds,
@@ -48,6 +48,9 @@ export interface FoldEvaluationSummary {
   embargoDates: string[];
   validationRows: number;
   validationWarnings: string[];
+  validationApiUsageSemantics: 'delta_within_walk_forward_run' | 'per_validation_run_snapshot';
+  validationApiUsage: ApiUsageSummary;
+  validationApiUsageCumulative: ApiUsageSummary;
   metrics: ParityMetricsReport;
 }
 
@@ -56,6 +59,9 @@ export interface HoldoutEvaluationSummary {
   endDate: string;
   validationRows: number;
   validationWarnings: string[];
+  validationApiUsageSemantics: 'delta_within_walk_forward_run' | 'per_validation_run_snapshot';
+  validationApiUsage: ApiUsageSummary;
+  validationApiUsageCumulative: ApiUsageSummary;
   metrics: ParityMetricsReport;
 }
 
@@ -264,6 +270,25 @@ function foldMetadataWithDates(
   };
 }
 
+function usageToMap(summary: ApiUsageSummary): Map<string, number> {
+  return new Map(summary.endpoints.map((item) => [item.endpoint, item.calls]));
+}
+
+function usageDelta(current: ApiUsageSummary, previous: ApiUsageSummary): ApiUsageSummary {
+  const currentMap = usageToMap(current);
+  const previousMap = usageToMap(previous);
+  const endpoints: Array<{ endpoint: string; calls: number }> = [];
+  for (const [endpoint, currentCalls] of currentMap.entries()) {
+    const delta = currentCalls - (previousMap.get(endpoint) ?? 0);
+    if (delta > 0) endpoints.push({ endpoint, calls: delta });
+  }
+  endpoints.sort((a, b) => b.calls - a.calls || a.endpoint.localeCompare(b.endpoint));
+  return {
+    totalCalls: Math.max(0, current.totalCalls - previous.totalCalls),
+    endpoints,
+  };
+}
+
 export async function runParityWalkForwardValidation(
   config: ParityWalkForwardConfig,
   deps: ParityWalkForwardDependencies = {},
@@ -305,13 +330,17 @@ export async function runParityWalkForwardValidation(
   }
 
   const foldEvaluations: FoldEvaluationSummary[] = [];
+  const validationDefaults = config.parityValidation ?? {};
+  const shouldResetPerValidationRun = validationDefaults.resetApiUsageAtStart ?? false;
+  let previousCumulativeUsage: ApiUsageSummary = { totalCalls: 0, endpoints: [] };
   for (const fold of folds) {
     const testStartDate = fold.testDates[0];
     const testEndDate = fold.testDates[fold.testDates.length - 1];
     if (!testStartDate || !testEndDate) continue;
 
     const validationReport = await buildParityValidation({
-      ...(config.parityValidation ?? {}),
+      ...validationDefaults,
+      resetApiUsageAtStart: shouldResetPerValidationRun,
       tickers: effectiveTickers,
       startDate: testStartDate,
       endDate: testEndDate,
@@ -321,12 +350,22 @@ export async function runParityWalkForwardValidation(
     for (const warning of metrics.warnings) warnings.add(`[fold ${fold.fold}] ${warning}`);
 
     const baseMeta = foldMetadataWithDates(fold, orderedDates);
+    const cumulativeUsage = validationReport.apiUsage;
+    const reportedUsage = shouldResetPerValidationRun
+      ? cumulativeUsage
+      : usageDelta(cumulativeUsage, previousCumulativeUsage);
     foldEvaluations.push({
       ...baseMeta,
       validationRows: validationReport.summary.rows,
       validationWarnings: validationReport.warnings.slice().sort((a, b) => a.localeCompare(b)),
+      validationApiUsageSemantics: shouldResetPerValidationRun
+        ? 'per_validation_run_snapshot'
+        : 'delta_within_walk_forward_run',
+      validationApiUsage: reportedUsage,
+      validationApiUsageCumulative: cumulativeUsage,
       metrics,
     });
+    previousCumulativeUsage = cumulativeUsage;
   }
 
   let holdout: HoldoutEvaluationSummary | null = null;
@@ -334,7 +373,8 @@ export async function runParityWalkForwardValidation(
     const holdoutStartDate = holdoutWindow.startDate as string;
     const holdoutEndDate = holdoutWindow.endDate as string;
     const holdoutValidation = await buildParityValidation({
-      ...(config.parityValidation ?? {}),
+      ...validationDefaults,
+      resetApiUsageAtStart: shouldResetPerValidationRun,
       tickers: effectiveTickers,
       startDate: holdoutStartDate,
       endDate: holdoutEndDate,
@@ -342,13 +382,23 @@ export async function runParityWalkForwardValidation(
     const holdoutMetrics = buildMetrics(holdoutValidation, config.parityMetrics);
     for (const warning of holdoutValidation.warnings) warnings.add(`[holdout] ${warning}`);
     for (const warning of holdoutMetrics.warnings) warnings.add(`[holdout] ${warning}`);
+    const cumulativeUsage = holdoutValidation.apiUsage;
+    const reportedUsage = shouldResetPerValidationRun
+      ? cumulativeUsage
+      : usageDelta(cumulativeUsage, previousCumulativeUsage);
     holdout = {
       startDate: holdoutStartDate,
       endDate: holdoutEndDate,
       validationRows: holdoutValidation.summary.rows,
       validationWarnings: holdoutValidation.warnings.slice().sort((a, b) => a.localeCompare(b)),
+      validationApiUsageSemantics: shouldResetPerValidationRun
+        ? 'per_validation_run_snapshot'
+        : 'delta_within_walk_forward_run',
+      validationApiUsage: reportedUsage,
+      validationApiUsageCumulative: cumulativeUsage,
       metrics: holdoutMetrics,
     };
+    previousCumulativeUsage = cumulativeUsage;
   }
 
   return {

@@ -20,6 +20,14 @@ export interface ForwardReturnLabel {
   isDirectionalAfterCostsLabelAvailable: boolean;
 }
 
+export interface ApiUsageSummary {
+  totalCalls: number;
+  endpoints: Array<{
+    endpoint: string;
+    calls: number;
+  }>;
+}
+
 export interface ParityValidationRow {
   asOfDate: string;
   ticker: string;
@@ -68,6 +76,8 @@ export interface ParityValidationConfig {
   apiDelayMs: number;
   portfolioValue?: number;
   analysisContext?: Omit<AnalysisContext, 'asOfDate' | 'strictPointInTime'>;
+  earningsCircuitBreakerFailureThreshold?: number;
+  resetApiUsageAtStart?: boolean;
   scanOptions?: Omit<
     ScanOptions,
     'tickers' | 'analysisContext' | 'portfolioValue'
@@ -88,6 +98,7 @@ export interface ParityValidationReport {
   generatedAt: string;
   config: ParityValidationConfig;
   summary: ParityValidationSummary;
+  apiUsage: ApiUsageSummary;
   rows: ParityValidationRow[];
   warnings: string[];
 }

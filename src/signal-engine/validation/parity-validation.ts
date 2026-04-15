@@ -9,10 +9,12 @@ import {
   fetchUpcomingEarningsDate,
   type PriceBar,
 } from '../../data/market.js';
+import { getApiUsageSnapshot, resetApiUsageCounters } from '../../tools/finance/api.js';
 import { SIGNAL_CONFIG } from '../config.js';
 import { regimeSpyCalendarWindowDays, runDailyScan, type ScanProviders } from '../index.js';
 import { AnalysisContext } from '../../agents/analysis/types.js';
 import {
+  ApiUsageSummary,
   ForwardReturnLabel,
   InputProvenance,
   ParityValidationConfig,
@@ -32,12 +34,21 @@ type DayProvenance = {
   regime: InputProvenance | null;
 };
 
+type EarningsCircuitBreakerState = {
+  threshold: number;
+  consecutiveFailures: number;
+  tripped: boolean;
+  tripReason: string | null;
+};
+
 const DEFAULT_CONFIG: ParityValidationConfig = {
   tickers: ['AAPL', 'MSFT'],
   startDate: '2026-01-01',
   endDate: '2026-01-31',
   watchlistSliceSize: 25,
   apiDelayMs: 0,
+  earningsCircuitBreakerFailureThreshold: 6,
+  resetApiUsageAtStart: true,
 };
 
 function asDateOnly(value: string): string {
@@ -117,10 +128,24 @@ function parseProviders(
   return base;
 }
 
+function recordEarningsFailure(
+  circuitBreaker: EarningsCircuitBreakerState,
+  reason: 'unavailable' | 'error',
+): void {
+  if (circuitBreaker.tripped) return;
+  circuitBreaker.consecutiveFailures += 1;
+  if (circuitBreaker.consecutiveFailures < circuitBreaker.threshold) return;
+  circuitBreaker.tripped = true;
+  circuitBreaker.tripReason =
+    `Validation earnings circuit breaker activated after ${circuitBreaker.consecutiveFailures} ` +
+    `consecutive ${reason} responses; skipping earnings endpoint calls for the remainder of this run.`;
+}
+
 function createWrappedProviders(
   baseProviders: ScanProviders,
   dayProvenance: DayProvenance,
   source: InputProvenance['source'],
+  earningsCircuitBreaker: EarningsCircuitBreakerState,
 ): ScanProviders {
   return {
     runTechnicalAnalysis: baseProviders.runTechnicalAnalysis,
@@ -129,9 +154,21 @@ function createWrappedProviders(
     runValuationAnalysis: baseProviders.runValuationAnalysis,
     fetchUpcomingEarningsDate: async (ticker, context) => {
       const asOfDate = context?.asOfDate?.slice(0, 10) ?? null;
+      if (earningsCircuitBreaker.tripped) {
+        dayProvenance.earningsByTicker.set(ticker, {
+          status: 'unavailable',
+          source,
+          asOfDateUsed: asOfDate,
+          warning:
+            `${earningsCircuitBreaker.tripReason ?? 'Validation earnings circuit breaker active.'} ` +
+            `Ticker ${ticker} as of ${asOfDate ?? 'unknown'}.`,
+        });
+        return null;
+      }
       try {
         const value = await baseProviders.fetchUpcomingEarningsDate?.(ticker, context);
         if (value) {
+          earningsCircuitBreaker.consecutiveFailures = 0;
           dayProvenance.earningsByTicker.set(ticker, {
             status: 'available',
             source,
@@ -146,6 +183,7 @@ function createWrappedProviders(
           asOfDateUsed: asOfDate,
           warning: `No upcoming earnings date returned for ${ticker} as of ${asOfDate ?? 'unknown'}.`,
         });
+        recordEarningsFailure(earningsCircuitBreaker, 'unavailable');
         return null;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -155,6 +193,7 @@ function createWrappedProviders(
           asOfDateUsed: asOfDate,
           warning: `Earnings provider error for ${ticker}: ${message}`,
         });
+        recordEarningsFailure(earningsCircuitBreaker, 'error');
         return null;
       }
     },
@@ -446,6 +485,21 @@ export async function buildParityValidationReport(
   const fetchHistoricalPricesFn = deps.fetchHistoricalPricesFn ?? fetchHistoricalPrices;
   const runDailyScanFn = deps.runDailyScanFn ?? runDailyScan;
   const now = deps.nowFn ?? (() => new Date());
+  if (resolved.resetApiUsageAtStart) {
+    resetApiUsageCounters();
+  }
+  const earningsCircuitBreaker: EarningsCircuitBreakerState = {
+    threshold: Math.max(
+      1,
+      Math.floor(
+        resolved.earningsCircuitBreakerFailureThreshold ??
+          DEFAULT_CONFIG.earningsCircuitBreakerFailureThreshold!,
+      ),
+    ),
+    consecutiveFailures: 0,
+    tripped: false,
+    tripReason: null,
+  };
 
   if (!resolved.tickers.length) {
     throw new Error('parity validation requires at least one ticker');
@@ -502,6 +556,7 @@ export async function buildParityValidationReport(
         baseProviders,
         dayProvenance,
         usingCustomProviders ? 'custom_provider' : 'historical_provider_asof',
+        earningsCircuitBreaker,
       );
 
       const scan = await runDailyScanFn(
@@ -612,6 +667,8 @@ export async function buildParityValidationReport(
     }
   }
 
+  const apiUsage: ApiUsageSummary = getApiUsageSnapshot();
+
   return {
     generatedAt: now().toISOString(),
     config: resolved,
@@ -628,8 +685,9 @@ export async function buildParityValidationReport(
         (row) => row.regimeProvenance.status !== 'available',
       ).length,
     },
+    apiUsage,
     rows,
-    warnings: Array.from(warnings),
+    warnings: Array.from(warnings).sort((a, b) => a.localeCompare(b)),
   };
 }
 

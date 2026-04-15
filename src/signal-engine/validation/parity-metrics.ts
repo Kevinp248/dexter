@@ -66,6 +66,15 @@ export interface QualityAttributionSummary {
   missingCriticalFieldCounts: Array<{ field: string; count: number }>;
 }
 
+export interface ActionAttributionSummary {
+  rawActionCounts: Array<{ rawAction: string; count: number }>;
+  finalActionCounts: Array<{ finalAction: string; count: number }>;
+  rawSellNormalizedOrSuppressedToHoldCount: number;
+  qualityGuardSuppressedCount: number;
+  dataCompletenessFailCount: number;
+  fallbackRowsCount: number;
+}
+
 export interface ParityMetricsConfig {
   smallSampleWarningThreshold: number;
   confidenceBuckets: number[];
@@ -87,6 +96,7 @@ export interface ParityMetricsReport {
   regimeAttribution: RegimeAttributionRow[];
   sectorAttribution: SectorAttributionSummary;
   qualityAttribution: QualityAttributionSummary;
+  actionAttribution: ActionAttributionSummary;
   warnings: string[];
 }
 
@@ -239,11 +249,17 @@ export function buildParityMetricsReport(
   if (!rows.length) warnings.add('No validation rows available. Metrics were generated with empty inputs.');
 
   const actionCounts = new Map<string, number>();
+  const rawActionCounts = new Map<string, number>();
   for (const row of rows) {
     actionCounts.set(row.finalAction, (actionCounts.get(row.finalAction) ?? 0) + 1);
+    rawActionCounts.set(row.rawAction, (rawActionCounts.get(row.rawAction) ?? 0) + 1);
   }
   const rowCountsByFinalAction = sortedCounts(actionCounts, 'finalAction') as Array<{
     finalAction: string;
+    count: number;
+  }>;
+  const rowCountsByRawAction = sortedCounts(rawActionCounts, 'rawAction') as Array<{
+    rawAction: string;
     count: number;
   }>;
 
@@ -407,6 +423,16 @@ export function buildParityMetricsReport(
       'field',
     ) as Array<{ field: string; count: number }>,
   };
+  const actionAttribution: ActionAttributionSummary = {
+    rawActionCounts: rowCountsByRawAction,
+    finalActionCounts: rowCountsByFinalAction,
+    rawSellNormalizedOrSuppressedToHoldCount: rows.filter(
+      (row) => row.rawAction === 'SELL' && row.finalAction === 'HOLD',
+    ).length,
+    qualityGuardSuppressedCount: qualityAttribution.qualityGuardSuppressedCount,
+    dataCompletenessFailCount: rows.filter((row) => row.dataCompletenessStatus === 'fail').length,
+    fallbackRowsCount: qualityAttribution.rowsWithFallbackCount,
+  };
 
   for (const bucket of confidenceBucketCalibration) {
     if (bucket.rowCount > 0 && bucket.rowCount < resolved.smallSampleWarningThreshold) {
@@ -444,6 +470,7 @@ export function buildParityMetricsReport(
     }),
     sectorAttribution,
     qualityAttribution,
+    actionAttribution,
     warnings: Array.from(warnings).sort((a, b) => a.localeCompare(b)),
   };
 }

@@ -274,6 +274,96 @@ describe('parity validation harness', () => {
     expect(report.warnings.some((warning) => warning.includes('No upcoming earnings date'))).toBe(true);
   });
 
+  test('validation earnings circuit breaker stops repeated unavailable calls and keeps provenance explicit', async () => {
+    let earningsCalls = 0;
+    const providers: ScanProviders = {
+      ...makeProviders(),
+      async fetchUpcomingEarningsDate() {
+        earningsCalls += 1;
+        return null;
+      },
+    };
+    const bars = makeBars('2026-01-01', 5, 100);
+    const report = await buildParityValidationReport(
+      {
+        tickers: ['AAPL', 'MSFT'],
+        startDate: bars[0].date,
+        endDate: bars[bars.length - 1].date,
+        earningsCircuitBreakerFailureThreshold: 2,
+      },
+      {
+        baseProviders: providers,
+        fetchHistoricalPricesFn: async () => bars,
+      },
+    );
+
+    expect(earningsCalls).toBe(2);
+    expect(
+      report.rows.some((row) =>
+        (row.earningsProvenance.warning ?? '').includes('Validation earnings circuit breaker activated'),
+      ),
+    ).toBe(true);
+    expect(
+      report.warnings.some((warning) =>
+        warning.includes('Validation earnings circuit breaker activated'),
+      ),
+    ).toBe(true);
+  });
+
+  test('validation earnings provenance records provider errors clearly', async () => {
+    let earningsCalls = 0;
+    const providers: ScanProviders = {
+      ...makeProviders(),
+      async fetchUpcomingEarningsDate() {
+        earningsCalls += 1;
+        throw new Error('404 Not Found');
+      },
+    };
+    const bars = makeBars('2026-01-01', 3, 100);
+    const report = await buildParityValidationReport(
+      {
+        tickers: ['AAPL'],
+        startDate: bars[0].date,
+        endDate: bars[bars.length - 1].date,
+        earningsCircuitBreakerFailureThreshold: 1,
+      },
+      {
+        baseProviders: providers,
+        fetchHistoricalPricesFn: async () => bars,
+      },
+    );
+
+    expect(earningsCalls).toBe(1);
+    expect(report.rows.every((row) => row.earningsProvenance.status !== 'available')).toBe(true);
+    expect(
+      report.rows.some((row) =>
+        (row.earningsProvenance.warning ?? '').includes('Validation earnings circuit breaker activated'),
+      ),
+    ).toBe(true);
+    expect(
+      report.warnings.some((warning) => warning.includes('Earnings provider error')),
+    ).toBe(true);
+  });
+
+  test('parity validation report includes API usage summary', async () => {
+    const providers = makeProviders();
+    const bars = makeBars('2026-01-01', 2, 100);
+    const report = await buildParityValidationReport(
+      {
+        tickers: ['AAPL'],
+        startDate: bars[0].date,
+        endDate: bars[bars.length - 1].date,
+      },
+      {
+        baseProviders: providers,
+        fetchHistoricalPricesFn: async () => bars,
+      },
+    );
+
+    expect(typeof report.apiUsage.totalCalls).toBe('number');
+    expect(Array.isArray(report.apiUsage.endpoints)).toBe(true);
+  });
+
   test('forward-return labels are deterministic and action-aware after-costs are BUY-only', async () => {
     const providers = makeProviders();
     const bars = makeBars('2026-01-01', 30, 100);

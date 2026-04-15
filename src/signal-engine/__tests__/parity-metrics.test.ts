@@ -103,6 +103,10 @@ function makeReport(rows: ParityValidationRow[]): ParityValidationReport {
         (row) => row.regimeProvenance.status !== 'available',
       ).length,
     },
+    apiUsage: {
+      totalCalls: 0,
+      endpoints: [],
+    },
     rows,
     warnings: [],
   };
@@ -233,6 +237,8 @@ describe('parity metrics', () => {
     const rows = [
       makeRow({
         regimeState: 'risk_on',
+        rawAction: 'SELL',
+        finalAction: 'HOLD',
         qualityGuardSuppressed: false,
         fallbackHadFallback: true,
         fallbackEventCount: 2,
@@ -260,6 +266,22 @@ describe('parity metrics', () => {
     expect(report.qualityAttribution.dataCompletenessStatusCounts).toEqual(
       expect.arrayContaining([{ status: 'fail', count: 1 }]),
     );
+    expect(report.actionAttribution.rawActionCounts).toEqual(
+      expect.arrayContaining([
+        { rawAction: 'BUY', count: 1 },
+        { rawAction: 'SELL', count: 1 },
+      ]),
+    );
+    expect(report.actionAttribution.finalActionCounts).toEqual(
+      expect.arrayContaining([
+        { finalAction: 'BUY', count: 1 },
+        { finalAction: 'HOLD', count: 1 },
+      ]),
+    );
+    expect(report.actionAttribution.rawSellNormalizedOrSuppressedToHoldCount).toBe(1);
+    expect(report.actionAttribution.qualityGuardSuppressedCount).toBe(1);
+    expect(report.actionAttribution.dataCompletenessFailCount).toBe(1);
+    expect(report.actionAttribution.fallbackRowsCount).toBe(1);
   });
 
   test('empty and small datasets produce warnings without crashes', () => {
