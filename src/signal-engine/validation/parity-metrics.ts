@@ -102,6 +102,16 @@ const HORIZONS: Array<{ name: ValidationHorizon; select: (row: ParityValidationR
   { name: '10d', select: (row) => row.forward10d },
   { name: '20d', select: (row) => row.forward20d },
 ];
+const HORIZON_ORDER: Record<ValidationHorizon, number> = {
+  '1d': 0,
+  '5d': 1,
+  '10d': 2,
+  '20d': 3,
+};
+
+function compareHorizon(a: ValidationHorizon, b: ValidationHorizon): number {
+  return HORIZON_ORDER[a] - HORIZON_ORDER[b];
+}
 
 function round(value: number, digits = 8): number {
   return Number(value.toFixed(digits));
@@ -423,13 +433,13 @@ export function buildParityMetricsReport(
     rowCountsByFinalAction,
     labelAvailabilityByHorizon,
     returnsByActionAndHorizon: returnsByActionAndHorizon.sort((a, b) => {
-      if (a.horizon !== b.horizon) return a.horizon.localeCompare(b.horizon);
+      if (a.horizon !== b.horizon) return compareHorizon(a.horizon, b.horizon);
       return a.finalAction.localeCompare(b.finalAction);
     }),
     confidenceBucketCalibration,
     aggregateScoreBucketCalibration,
     regimeAttribution: regimeAttributionRows.sort((a, b) => {
-      if (a.horizon !== b.horizon) return a.horizon.localeCompare(b.horizon);
+      if (a.horizon !== b.horizon) return compareHorizon(a.horizon, b.horizon);
       return a.regimeState.localeCompare(b.regimeState);
     }),
     sectorAttribution,

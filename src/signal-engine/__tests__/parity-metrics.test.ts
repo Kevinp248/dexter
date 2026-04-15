@@ -275,4 +275,19 @@ describe('parity metrics', () => {
     });
     expect(oneRowReport.warnings.some((warning) => warning.includes('Small sample warning'))).toBe(true);
   });
+
+  test('horizon sorting is deterministic as 1d, 5d, 10d, 20d (not lexicographic)', () => {
+    const report = buildParityMetricsReport(makeReport([makeRow()]), {
+      smallSampleWarningThreshold: 1,
+    });
+    const horizonOrder = report.returnsByActionAndHorizon
+      .filter((row) => row.finalAction === 'BUY')
+      .map((row) => row.horizon);
+    expect(horizonOrder).toEqual(['1d', '5d', '10d', '20d']);
+
+    const regimeHorizonOrder = report.regimeAttribution
+      .filter((row) => row.regimeState === 'risk_on')
+      .map((row) => row.horizon);
+    expect(regimeHorizonOrder).toEqual(['1d', '5d', '10d', '20d']);
+  });
 });
