@@ -110,6 +110,39 @@ function asDateOnly(value: string): string {
   return value.slice(0, 10);
 }
 
+function validateHoldoutWindow(
+  mainEndDate: string,
+  holdoutStartDate?: string,
+  holdoutEndDate?: string,
+): { hasHoldout: boolean; startDate: string | null; endDate: string | null } {
+  const hasStart = typeof holdoutStartDate === 'string' && holdoutStartDate.trim().length > 0;
+  const hasEnd = typeof holdoutEndDate === 'string' && holdoutEndDate.trim().length > 0;
+
+  if (hasStart !== hasEnd) {
+    throw new Error('Holdout window requires both holdoutStartDate and holdoutEndDate.');
+  }
+  if (!hasStart && !hasEnd) {
+    return { hasHoldout: false, startDate: null, endDate: null };
+  }
+
+  const startDate = asDateOnly(holdoutStartDate as string);
+  const endDate = asDateOnly(holdoutEndDate as string);
+  const normalizedMainEndDate = asDateOnly(mainEndDate);
+
+  if (startDate > endDate) {
+    throw new Error(
+      `Invalid holdout window: holdoutStartDate (${startDate}) must be <= holdoutEndDate (${endDate}).`,
+    );
+  }
+  if (startDate <= normalizedMainEndDate) {
+    throw new Error(
+      `Invalid holdout window: holdoutStartDate (${startDate}) must be after walk-forward endDate (${normalizedMainEndDate}).`,
+    );
+  }
+
+  return { hasHoldout: true, startDate, endDate };
+}
+
 function normalizeWalkForwardConfig(config: WalkForwardConfig): Required<WalkForwardConfig> {
   return {
     initialTrainSize: config.initialTrainSize,
@@ -212,6 +245,11 @@ export async function runParityWalkForwardValidation(
   const manifest = await loadManifest(manifestPath);
   const normalizedManifest = validateUniverseManifest(manifest);
   const resolvedWalkForward = normalizeWalkForwardConfig(config.walkForward);
+  const holdoutWindow = validateHoldoutWindow(
+    config.endDate,
+    config.holdoutStartDate,
+    config.holdoutEndDate,
+  );
 
   const warnings = new Set<string>();
   const survivorshipBiasWarning =
@@ -258,10 +296,9 @@ export async function runParityWalkForwardValidation(
   }
 
   let holdout: HoldoutEvaluationSummary | null = null;
-  const hasHoldout = Boolean(config.holdoutStartDate && config.holdoutEndDate);
-  if (hasHoldout) {
-    const holdoutStartDate = asDateOnly(config.holdoutStartDate as string);
-    const holdoutEndDate = asDateOnly(config.holdoutEndDate as string);
+  if (holdoutWindow.hasHoldout) {
+    const holdoutStartDate = holdoutWindow.startDate as string;
+    const holdoutEndDate = holdoutWindow.endDate as string;
     const holdoutValidation = await buildParityValidation({
       ...(config.parityValidation ?? {}),
       tickers: normalizedManifest.tickers.map((item) => item.ticker),

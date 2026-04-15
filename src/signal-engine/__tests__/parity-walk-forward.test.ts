@@ -176,6 +176,107 @@ describe('parity walk-forward orchestration', () => {
     expect(metricsCalls.length).toBe(report.walkForward.folds.length + 1);
   });
 
+  test('valid holdout window after walk-forward range is accepted', async () => {
+    const orderedDates = makeDates('2026-01-01', 20);
+    const report = await runParityWalkForwardValidation(
+      {
+        startDate: '2026-01-01',
+        endDate: '2026-01-20',
+        holdoutStartDate: '2026-01-21',
+        holdoutEndDate: '2026-01-25',
+        walkForward: {
+          initialTrainSize: 6,
+          testSize: 3,
+          stepSize: 3,
+          purgeSize: 1,
+          embargoSize: 1,
+        },
+      },
+      {
+        loadManifestFn: async () => ({ name: 'test', tickers: [{ ticker: 'AAPL' }] }),
+        orderedDatesFn: () => orderedDates,
+        buildParityValidationReportFn: async (cfg) =>
+          mockValidationReport(cfg?.startDate ?? '2026-01-01', cfg?.endDate ?? '2026-01-01', 1),
+        buildParityMetricsReportFn: () => mockMetricsReport(1),
+      },
+    );
+
+    expect(report.holdout).not.toBeNull();
+    expect(report.holdout?.startDate).toBe('2026-01-21');
+    expect(report.holdout?.endDate).toBe('2026-01-25');
+  });
+
+  test('missing one side of holdout dates throws validation error', async () => {
+    await expect(
+      runParityWalkForwardValidation(
+        {
+          startDate: '2026-01-01',
+          endDate: '2026-01-20',
+          holdoutStartDate: '2026-01-21',
+          walkForward: {
+            initialTrainSize: 6,
+            testSize: 3,
+            stepSize: 3,
+            purgeSize: 1,
+            embargoSize: 1,
+          },
+        },
+        {
+          loadManifestFn: async () => ({ name: 'test', tickers: [{ ticker: 'AAPL' }] }),
+          orderedDatesFn: () => makeDates('2026-01-01', 20),
+        },
+      ),
+    ).rejects.toThrow('Holdout window requires both holdoutStartDate and holdoutEndDate.');
+  });
+
+  test('holdout overlapping walk-forward window throws validation error', async () => {
+    await expect(
+      runParityWalkForwardValidation(
+        {
+          startDate: '2026-01-01',
+          endDate: '2026-01-20',
+          holdoutStartDate: '2026-01-20',
+          holdoutEndDate: '2026-01-25',
+          walkForward: {
+            initialTrainSize: 6,
+            testSize: 3,
+            stepSize: 3,
+            purgeSize: 1,
+            embargoSize: 1,
+          },
+        },
+        {
+          loadManifestFn: async () => ({ name: 'test', tickers: [{ ticker: 'AAPL' }] }),
+          orderedDatesFn: () => makeDates('2026-01-01', 20),
+        },
+      ),
+    ).rejects.toThrow('must be after walk-forward endDate');
+  });
+
+  test('holdout start after holdout end throws validation error', async () => {
+    await expect(
+      runParityWalkForwardValidation(
+        {
+          startDate: '2026-01-01',
+          endDate: '2026-01-20',
+          holdoutStartDate: '2026-02-01',
+          holdoutEndDate: '2026-01-25',
+          walkForward: {
+            initialTrainSize: 6,
+            testSize: 3,
+            stepSize: 3,
+            purgeSize: 1,
+            embargoSize: 1,
+          },
+        },
+        {
+          loadManifestFn: async () => ({ name: 'test', tickers: [{ ticker: 'AAPL' }] }),
+          orderedDatesFn: () => makeDates('2026-01-01', 20),
+        },
+      ),
+    ).rejects.toThrow('must be <= holdoutEndDate');
+  });
+
   test('metrics are called per fold and no production scan path is invoked directly by orchestrator', async () => {
     const orderedDates = makeDates('2026-01-01', 16);
     const buildParityValidationReportFn = jest.fn(async (cfg?: { startDate?: string; endDate?: string }) =>
