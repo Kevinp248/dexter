@@ -4,6 +4,7 @@ import {
   loadUniverseManifest,
   runParityWalkForwardValidation,
 } from '../validation/parity-walk-forward.js';
+import { parseArgs } from '../validation/parity-walk-forward.cli.js';
 import { ParityMetricsReport } from '../validation/parity-metrics.js';
 import { ParityValidationReport } from '../validation/parity-models.js';
 
@@ -117,6 +118,8 @@ describe('parity walk-forward orchestration', () => {
     );
 
     expect(report.walkForward.folds.length).toBeGreaterThan(0);
+    expect(report.universe.effectiveTickers).toEqual(['AAPL', 'MSFT']);
+    expect(report.universe.effectiveTickerCount).toBe(2);
     for (let i = 0; i < report.walkForward.folds.length; i += 1) {
       const fold = report.walkForward.folds[i];
       expect(fold.trainEndDate < fold.testStartDate).toBe(true);
@@ -128,6 +131,79 @@ describe('parity walk-forward orchestration', () => {
         expect(prev.testEndDate < fold.testStartDate).toBe(true);
       }
     }
+  });
+
+  test('CLI parses ticker override and config uses subset tickers', async () => {
+    const parsed = parseArgs([
+      '--tickers',
+      'aapl,MSFT,aapl,Nvda',
+      '--start',
+      '2026-01-01',
+      '--end',
+      '2026-01-20',
+      '--initial-train-size',
+      '6',
+      '--test-size',
+      '3',
+    ]);
+    expect(parsed.tickers).toEqual(['AAPL', 'MSFT', 'AAPL', 'NVDA']);
+
+    const orderedDates = makeDates('2026-01-01', 20);
+    const validationTickers: string[][] = [];
+    await runParityWalkForwardValidation(
+      {
+        startDate: '2026-01-01',
+        endDate: '2026-01-20',
+        tickers: ['aapl', 'MSFT', 'AAPL'],
+        walkForward: {
+          initialTrainSize: 6,
+          testSize: 3,
+          stepSize: 3,
+          purgeSize: 1,
+          embargoSize: 1,
+        },
+      },
+      {
+        loadManifestFn: async () => ({
+          name: 'test',
+          tickers: [{ ticker: 'AAPL' }, { ticker: 'MSFT' }, { ticker: 'NVDA' }],
+        }),
+        orderedDatesFn: () => orderedDates,
+        buildParityValidationReportFn: async (cfg) => {
+          validationTickers.push([...(cfg?.tickers ?? [])]);
+          return mockValidationReport(cfg?.startDate ?? '2026-01-01', cfg?.endDate ?? '2026-01-01', 1);
+        },
+        buildParityMetricsReportFn: () => mockMetricsReport(1),
+      },
+    );
+
+    expect(validationTickers.length).toBeGreaterThan(0);
+    expect(validationTickers.every((tickers) => tickers.join(',') === 'AAPL,MSFT')).toBe(true);
+  });
+
+  test('unknown ticker outside manifest throws clear error', async () => {
+    await expect(
+      runParityWalkForwardValidation(
+        {
+          startDate: '2026-01-01',
+          endDate: '2026-01-20',
+          tickers: ['AAPL', 'TSLA'],
+          walkForward: {
+            initialTrainSize: 6,
+            testSize: 3,
+            stepSize: 3,
+            purgeSize: 1,
+            embargoSize: 1,
+          },
+        },
+        {
+          loadManifestFn: async () => ({
+            name: 'test',
+            tickers: [{ ticker: 'AAPL' }, { ticker: 'MSFT' }],
+          }),
+        },
+      ),
+    ).rejects.toThrow('Ticker override includes tickers not present in manifest: TSLA.');
   });
 
   test('holdout rows are separate from walk-forward fold evaluations', async () => {
@@ -174,6 +250,47 @@ describe('parity walk-forward orchestration', () => {
     expect(report.walkForward.foldEvaluations.length).toBe(report.walkForward.folds.length);
     expect(validationCalls.length).toBe(report.walkForward.folds.length + 1);
     expect(metricsCalls.length).toBe(report.walkForward.folds.length + 1);
+  });
+
+  test('holdout behavior remains unchanged with ticker override', async () => {
+    const orderedDates = makeDates('2026-01-01', 25);
+    const validationCalls: Array<{ startDate: string; endDate: string; tickers: string[] }> = [];
+    const report = await runParityWalkForwardValidation(
+      {
+        startDate: '2026-01-01',
+        endDate: '2026-01-25',
+        holdoutStartDate: '2026-02-01',
+        holdoutEndDate: '2026-02-10',
+        tickers: ['msft'],
+        walkForward: {
+          initialTrainSize: 8,
+          testSize: 4,
+          stepSize: 4,
+          purgeSize: 1,
+          embargoSize: 1,
+        },
+      },
+      {
+        loadManifestFn: async () => ({
+          name: 'test',
+          tickers: [{ ticker: 'AAPL' }, { ticker: 'MSFT' }],
+        }),
+        orderedDatesFn: () => orderedDates,
+        buildParityValidationReportFn: async (cfg) => {
+          validationCalls.push({
+            startDate: cfg?.startDate ?? '',
+            endDate: cfg?.endDate ?? '',
+            tickers: [...(cfg?.tickers ?? [])],
+          });
+          return mockValidationReport(cfg?.startDate ?? '2026-01-01', cfg?.endDate ?? '2026-01-01', 1);
+        },
+        buildParityMetricsReportFn: () => mockMetricsReport(1),
+      },
+    );
+
+    expect(report.holdout).not.toBeNull();
+    expect(validationCalls.length).toBe(report.walkForward.folds.length + 1);
+    expect(validationCalls.every((call) => call.tickers.join(',') === 'MSFT')).toBe(true);
   });
 
   test('valid holdout window after walk-forward range is accepted', async () => {

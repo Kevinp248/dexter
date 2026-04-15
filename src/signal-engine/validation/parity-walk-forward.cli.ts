@@ -8,6 +8,7 @@ import {
 
 type CliArgs = {
   manifestPath: string;
+  tickers?: string[];
   startDate: string;
   endDate: string;
   initialTrainSize: number;
@@ -37,7 +38,7 @@ function parseNonNegativeInt(value: string, label: string): number {
   return parsed;
 }
 
-function parseArgs(argv: string[]): CliArgs {
+export function parseArgs(argv: string[]): CliArgs {
   const out: CliArgs = {
     manifestPath: DEFAULT_MANIFEST_PATH,
     startDate: '2026-01-01',
@@ -55,6 +56,14 @@ function parseArgs(argv: string[]): CliArgs {
     const arg = argv[i];
     if ((arg === '--manifest' || arg === '-m') && argv[i + 1]) {
       out.manifestPath = argv[i + 1];
+      i += 1;
+      continue;
+    }
+    if ((arg === '--tickers' || arg === '-t') && argv[i + 1]) {
+      out.tickers = argv[i + 1]
+        .split(',')
+        .map((value) => value.trim().toUpperCase())
+        .filter(Boolean);
       i += 1;
       continue;
     }
@@ -120,6 +129,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const report = await runParityWalkForwardValidation({
     manifestPath: args.manifestPath,
+    tickers: args.tickers,
     startDate: args.startDate,
     endDate: args.endDate,
     holdoutStartDate: args.holdoutStartDate,
@@ -143,7 +153,9 @@ async function main(): Promise<void> {
   console.log('Parity walk-forward validation completed');
   console.log(`Mode: ${report.mode}`);
   console.log(`Manifest: ${path.relative(process.cwd(), report.universe.manifestPath)}`);
-  console.log(`Tickers: ${report.universe.tickerCount}`);
+  console.log(
+    `Tickers: ${report.universe.effectiveTickerCount}/${report.universe.tickerCount} effective/manifest`,
+  );
   console.log(`Window: ${report.dateWindow.startDate} -> ${report.dateWindow.endDate}`);
   console.log(`Folds: ${report.walkForward.folds.length}`);
   console.log(`Holdout: ${report.holdout ? `${report.holdout.startDate} -> ${report.holdout.endDate}` : 'none'}`);
@@ -151,8 +163,15 @@ async function main(): Promise<void> {
   console.log(`JSON: ${path.relative(process.cwd(), persisted.jsonPath)}`);
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`Parity walk-forward validation failed: ${message}`);
-  process.exit(1);
-});
+const isDirectRun =
+  typeof process.argv[1] === 'string' &&
+  (process.argv[1].endsWith('parity-walk-forward.cli.ts') ||
+    process.argv[1].endsWith('parity-walk-forward.cli.js'));
+
+if (isDirectRun) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Parity walk-forward validation failed: ${message}`);
+    process.exit(1);
+  });
+}
