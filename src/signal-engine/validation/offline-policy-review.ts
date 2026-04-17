@@ -14,6 +14,7 @@ export interface ThresholdSet {
 export interface OfflinePolicyReviewConfig {
   directories?: string[];
   files?: string[];
+  scenarioManifestPath?: string;
   outputPath?: string;
 }
 
@@ -35,6 +36,10 @@ export interface ReplayableRow {
   aggregateScore: number;
   riskScore: number;
   valuationScore: number | null;
+  technicalScore: number | null;
+  fundamentalsScore: number | null;
+  sentimentScore: number | null;
+  regimeState: string | null;
   rawAction: string | null;
   finalAction: string | null;
 }
@@ -52,6 +57,34 @@ export interface CombinedMatrixCell {
   holdToNonHoldFlips: number;
 }
 
+interface ScenarioPolicy {
+  buyScoreThreshold: number;
+  sellScoreThreshold: number;
+  buyRiskThreshold: number;
+  buyScoreThresholdAddRiskOff: number;
+}
+
+interface ScenarioAggregateWeights {
+  technical: number;
+  fundamentals: number;
+  valuation: number;
+  sentiment: number;
+}
+
+interface OfflineCalibrationScenario {
+  id: string;
+  name: string;
+  description: string;
+  policy: ScenarioPolicy;
+  aggregateWeights: ScenarioAggregateWeights | null;
+}
+
+interface OfflineCalibrationManifest {
+  version: string;
+  description: string;
+  scenarios: OfflineCalibrationScenario[];
+}
+
 export interface OfflinePolicyReviewReport {
   generatedAt: string;
   config: {
@@ -66,9 +99,9 @@ export interface OfflinePolicyReviewReport {
   replay: {
     totalRowPayloadsFound: number;
     replayableRows: number;
-    currentThresholdSetName: ThresholdSetName;
-    actionCountsCurrent: ActionCounts;
-    actionCountsByThresholdSet: Array<{
+    thresholdReplayBaselineSetName: ThresholdSetName;
+    actionCountsThresholdReplayBaseline: ActionCounts;
+    actionCountsByThresholdReplaySet: Array<{
       thresholdSet: ThresholdSetName;
       buyThreshold: number;
       sellThreshold: number;
@@ -91,10 +124,48 @@ export interface OfflinePolicyReviewReport {
     };
     combinedThresholdValuationMatrix: CombinedMatrixCell[];
   };
+  calibrationScenarios: {
+    manifestPath: string;
+    manifestVersion: string;
+    baselineScenarioId: string;
+    scenarios: Array<{
+      id: string;
+      name: string;
+      description: string;
+      policy: ScenarioPolicy;
+      aggregateWeights: ScenarioAggregateWeights | null;
+      actionCounts: ActionCounts;
+      holdFlipAttribution: {
+        baselineHoldRows: number;
+        holdToBuy: number;
+        holdToSell: number;
+        holdToNonHold: number;
+        holdStayedHold: number;
+      };
+      deltaVsBaseline: {
+        buyDelta: number;
+        sellDelta: number;
+        holdDelta: number;
+        holdToNonHoldDelta: number;
+      };
+      diagnostics: {
+        rowsUsingReweightedAggregate: number;
+        rowsMissingComponentBreakdownForReweight: number;
+        rowsUsingRiskOffUplift: number;
+      };
+    }>;
+  } | null;
   warnings: string[];
 }
 
 const DEFAULT_DIRECTORIES = [path.join(process.cwd(), '.dexter', 'signal-engine', 'validation')];
+const DEFAULT_SCENARIO_MANIFEST_PATH = path.join(
+  process.cwd(),
+  'src',
+  'signal-engine',
+  'validation',
+  'offline-calibration-scenarios.v1.json',
+);
 const BUY_RISK_THRESHOLD = 0.35;
 const VALUATION_WEIGHT = 0.18;
 
@@ -176,6 +247,10 @@ function pushRowsFromArray(
       aggregateScore,
       riskScore,
       valuationScore: asNumber(rec.valuationScore),
+      technicalScore: asNumber(rec.technicalScore),
+      fundamentalsScore: asNumber(rec.fundamentalsScore),
+      sentimentScore: asNumber(rec.sentimentScore),
+      regimeState: typeof rec.regimeState === 'string' ? rec.regimeState : null,
       rawAction: typeof rec.rawAction === 'string' ? rec.rawAction : null,
       finalAction: typeof rec.finalAction === 'string' ? rec.finalAction : null,
     });
@@ -348,6 +423,220 @@ function scoreWithValuation(row: ReplayableRow, valuationCase: ValuationCaseName
   return round(row.aggregateScore + delta, 8);
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function asScenarioNumber(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`Scenario field "${label}" must be a finite number.`);
+  }
+  return value;
+}
+
+function parseScenarioManifest(raw: unknown): OfflineCalibrationManifest {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Scenario manifest must be a JSON object.');
+  }
+  const rec = raw as Record<string, unknown>;
+  const version = typeof rec.version === 'string' ? rec.version : 'unknown';
+  const description = typeof rec.description === 'string' ? rec.description : '';
+  if (!Array.isArray(rec.scenarios) || rec.scenarios.length === 0) {
+    throw new Error('Scenario manifest requires a non-empty "scenarios" array.');
+  }
+
+  const seenIds = new Set<string>();
+  const scenarios: OfflineCalibrationScenario[] = rec.scenarios.map((item, index) => {
+    if (!item || typeof item !== 'object') {
+      throw new Error(`Scenario at index ${index} is not an object.`);
+    }
+    const scenarioRec = item as Record<string, unknown>;
+    const id = typeof scenarioRec.id === 'string' ? scenarioRec.id.trim() : '';
+    if (!id) throw new Error(`Scenario at index ${index} is missing non-empty "id".`);
+    if (seenIds.has(id)) throw new Error(`Scenario manifest contains duplicate id "${id}".`);
+    seenIds.add(id);
+    const name = typeof scenarioRec.name === 'string' ? scenarioRec.name : id;
+    const descriptionValue =
+      typeof scenarioRec.description === 'string' ? scenarioRec.description : '';
+
+    if (!scenarioRec.policy || typeof scenarioRec.policy !== 'object') {
+      throw new Error(`Scenario "${id}" must include a "policy" object.`);
+    }
+    const policyRec = scenarioRec.policy as Record<string, unknown>;
+    const policy: ScenarioPolicy = {
+      buyScoreThreshold: asScenarioNumber(policyRec.buyScoreThreshold, `${id}.policy.buyScoreThreshold`),
+      sellScoreThreshold: asScenarioNumber(policyRec.sellScoreThreshold, `${id}.policy.sellScoreThreshold`),
+      buyRiskThreshold: asScenarioNumber(policyRec.buyRiskThreshold, `${id}.policy.buyRiskThreshold`),
+      buyScoreThresholdAddRiskOff: asScenarioNumber(
+        policyRec.buyScoreThresholdAddRiskOff,
+        `${id}.policy.buyScoreThresholdAddRiskOff`,
+      ),
+    };
+
+    let aggregateWeights: ScenarioAggregateWeights | null = null;
+    if (scenarioRec.aggregateWeights !== undefined) {
+      if (!scenarioRec.aggregateWeights || typeof scenarioRec.aggregateWeights !== 'object') {
+        throw new Error(`Scenario "${id}" aggregateWeights must be an object when provided.`);
+      }
+      const weightsRec = scenarioRec.aggregateWeights as Record<string, unknown>;
+      aggregateWeights = {
+        technical: asScenarioNumber(weightsRec.technical, `${id}.aggregateWeights.technical`),
+        fundamentals: asScenarioNumber(
+          weightsRec.fundamentals,
+          `${id}.aggregateWeights.fundamentals`,
+        ),
+        valuation: asScenarioNumber(weightsRec.valuation, `${id}.aggregateWeights.valuation`),
+        sentiment: asScenarioNumber(weightsRec.sentiment, `${id}.aggregateWeights.sentiment`),
+      };
+      const sum =
+        aggregateWeights.technical +
+        aggregateWeights.fundamentals +
+        aggregateWeights.valuation +
+        aggregateWeights.sentiment;
+      if (Math.abs(sum - 1) > 1e-6) {
+        throw new Error(
+          `Scenario "${id}" aggregateWeights must sum to 1. Received ${sum.toFixed(6)}.`,
+        );
+      }
+    }
+
+    return {
+      id,
+      name,
+      description: descriptionValue,
+      policy,
+      aggregateWeights,
+    };
+  });
+
+  return {
+    version,
+    description,
+    scenarios,
+  };
+}
+
+async function loadScenarioManifest(manifestPath: string): Promise<OfflineCalibrationManifest> {
+  const raw = await readFile(manifestPath, 'utf8');
+  const parsed = JSON.parse(raw) as unknown;
+  return parseScenarioManifest(parsed);
+}
+
+function scenarioActionForRow(
+  row: ReplayableRow,
+  scenario: OfflineCalibrationScenario,
+): { action: ReplayAction; usedReweight: boolean; usedRiskOffUplift: boolean; missingReweightData: boolean } {
+  let score = row.aggregateScore;
+  let usedReweight = false;
+  let missingReweightData = false;
+  if (scenario.aggregateWeights) {
+    if (
+      row.technicalScore !== null &&
+      row.fundamentalsScore !== null &&
+      row.valuationScore !== null &&
+      row.sentimentScore !== null
+    ) {
+      score = clamp(
+        row.technicalScore * scenario.aggregateWeights.technical +
+          row.fundamentalsScore * scenario.aggregateWeights.fundamentals +
+          row.valuationScore * scenario.aggregateWeights.valuation +
+          row.sentimentScore * scenario.aggregateWeights.sentiment,
+        -1,
+        1,
+      );
+      usedReweight = true;
+    } else {
+      missingReweightData = true;
+    }
+  }
+
+  const usedRiskOffUplift = row.regimeState === 'risk_off';
+  const effectiveBuyThreshold =
+    scenario.policy.buyScoreThreshold +
+    (usedRiskOffUplift ? scenario.policy.buyScoreThresholdAddRiskOff : 0);
+  if (score >= effectiveBuyThreshold && row.riskScore > scenario.policy.buyRiskThreshold) {
+    return { action: 'BUY', usedReweight, usedRiskOffUplift, missingReweightData };
+  }
+  if (score <= scenario.policy.sellScoreThreshold) {
+    return { action: 'SELL', usedReweight, usedRiskOffUplift, missingReweightData };
+  }
+  return { action: 'HOLD', usedReweight, usedRiskOffUplift, missingReweightData };
+}
+
+function evaluateCalibrationScenarios(
+  rows: ReplayableRow[],
+  scenarios: OfflineCalibrationScenario[],
+): { baselineScenarioId: string; scenarios: NonNullable<OfflinePolicyReviewReport['calibrationScenarios']>['scenarios'] } | null {
+  if (!scenarios.length) return null;
+
+  const baseline = scenarios.find((scenario) => scenario.id === 'baseline') ?? scenarios[0];
+  const baselineActions = rows.map((row) => scenarioActionForRow(row, baseline).action);
+  const baselineCountsMap = new Map<ReplayAction, number>();
+  for (const action of baselineActions) {
+    baselineCountsMap.set(action, (baselineCountsMap.get(action) ?? 0) + 1);
+  }
+  const baselineCounts = toActionCounts(baselineCountsMap);
+
+  const baselineHoldRows = baselineActions.reduce(
+    (sum, action) => (action === 'HOLD' ? sum + 1 : sum),
+    0,
+  );
+
+  const scenarioSummaries = scenarios.map((scenario) => {
+    const countsMap = new Map<ReplayAction, number>();
+    let holdToBuy = 0;
+    let holdToSell = 0;
+    let holdStayedHold = 0;
+    let rowsUsingReweightedAggregate = 0;
+    let rowsMissingComponentBreakdownForReweight = 0;
+    let rowsUsingRiskOffUplift = 0;
+
+    rows.forEach((row, index) => {
+      const result = scenarioActionForRow(row, scenario);
+      countsMap.set(result.action, (countsMap.get(result.action) ?? 0) + 1);
+      if (result.usedReweight) rowsUsingReweightedAggregate += 1;
+      if (result.missingReweightData) rowsMissingComponentBreakdownForReweight += 1;
+      if (result.usedRiskOffUplift) rowsUsingRiskOffUplift += 1;
+
+      if (baselineActions[index] !== 'HOLD') return;
+      if (result.action === 'BUY') holdToBuy += 1;
+      else if (result.action === 'SELL') holdToSell += 1;
+      else holdStayedHold += 1;
+    });
+
+    const actionCounts = toActionCounts(countsMap);
+    const holdToNonHold = holdToBuy + holdToSell;
+    return {
+      id: scenario.id,
+      name: scenario.name,
+      description: scenario.description,
+      policy: scenario.policy,
+      aggregateWeights: scenario.aggregateWeights,
+      actionCounts,
+      holdFlipAttribution: {
+        baselineHoldRows,
+        holdToBuy,
+        holdToSell,
+        holdToNonHold,
+        holdStayedHold,
+      },
+      deltaVsBaseline: {
+        buyDelta: actionCounts.BUY - baselineCounts.BUY,
+        sellDelta: actionCounts.SELL - baselineCounts.SELL,
+        holdDelta: actionCounts.HOLD - baselineCounts.HOLD,
+        holdToNonHoldDelta: holdToNonHold,
+      },
+      diagnostics: {
+        rowsUsingReweightedAggregate,
+        rowsMissingComponentBreakdownForReweight,
+        rowsUsingRiskOffUplift,
+      },
+    };
+  });
+
+  return { baselineScenarioId: baseline.id, scenarios: scenarioSummaries };
+}
+
 function computeReport(
   rows: ReplayableRow[],
   totalRowPayloadsFound: number,
@@ -367,7 +656,7 @@ function computeReport(
     };
   });
 
-  const actionCountsCurrent = actionCountsBySet.find((row) => row.thresholdSet === 'A')?.actionCounts ??
+  const actionCountsThresholdReplayBaseline = actionCountsBySet.find((row) => row.thresholdSet === 'A')?.actionCounts ??
     actionCountsEmpty();
 
   const baselineHolds = rows.filter(
@@ -452,9 +741,9 @@ function computeReport(
   return {
     totalRowPayloadsFound,
     replayableRows: rows.length,
-    currentThresholdSetName: 'A',
-    actionCountsCurrent,
-    actionCountsByThresholdSet: actionCountsBySet,
+    thresholdReplayBaselineSetName: 'A',
+    actionCountsThresholdReplayBaseline,
+    actionCountsByThresholdReplaySet: actionCountsBySet,
     holdFlipAttribution: {
       baselineHoldRows: baselineHolds.length,
       thresholdOnly,
@@ -474,6 +763,9 @@ export async function buildOfflinePolicyReviewReport(
   config: OfflinePolicyReviewConfig = {},
 ): Promise<OfflinePolicyReviewReport> {
   const { directories, files } = await resolveInputFiles(config);
+  const scenarioManifestPath = path.resolve(
+    config.scenarioManifestPath ?? DEFAULT_SCENARIO_MANIFEST_PATH,
+  );
   const warnings = new Set<string>();
   const artifacts: ArtifactCoverage[] = [];
   const replayableRows: ReplayableRow[] = [];
@@ -513,6 +805,23 @@ export async function buildOfflinePolicyReviewReport(
     warnings.add('No replayable rows found (requires aggregateScore + riskScore per row).');
   }
 
+  let calibrationScenarios: OfflinePolicyReviewReport['calibrationScenarios'] = null;
+  try {
+    const manifest = await loadScenarioManifest(scenarioManifestPath);
+    const evaluated = evaluateCalibrationScenarios(replayableRows, manifest.scenarios);
+    if (evaluated) {
+      calibrationScenarios = {
+        manifestPath: scenarioManifestPath,
+        manifestVersion: manifest.version,
+        baselineScenarioId: evaluated.baselineScenarioId,
+        scenarios: evaluated.scenarios,
+      };
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    warnings.add(`Failed to load calibration scenario manifest (${scenarioManifestPath}): ${message}`);
+  }
+
   const report: OfflinePolicyReviewReport = {
     generatedAt: new Date().toISOString(),
     config: {
@@ -525,6 +834,7 @@ export async function buildOfflinePolicyReviewReport(
     },
     artifacts,
     replay: computeReport(replayableRows, totalRowPayloadsFound),
+    calibrationScenarios,
     warnings: Array.from(warnings).sort((a, b) => a.localeCompare(b)),
   };
 

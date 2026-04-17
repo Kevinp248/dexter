@@ -26,6 +26,52 @@ describe('offline policy review', () => {
     const parityFile = path.join(tmpDir, 'parity-validation-a.json');
     const walkForwardFile = path.join(tmpDir, 'parity-walk-forward-b.json');
     const summaryOnlyFile = path.join(tmpDir, 'parity-walk-forward-summary.json');
+    const scenarioManifestFile = path.join(tmpDir, 'offline-calibration-scenarios.v1.json');
+
+    await writeJson(scenarioManifestFile, {
+      version: 'test-v1',
+      scenarios: [
+        {
+          id: 'baseline',
+          name: 'Baseline',
+          description: 'Baseline policy',
+          policy: {
+            buyScoreThreshold: 0.5,
+            sellScoreThreshold: -0.45,
+            buyRiskThreshold: 0.35,
+            buyScoreThresholdAddRiskOff: 0.12,
+          },
+        },
+        {
+          id: 'thresholds_only',
+          name: 'Thresholds only',
+          description: 'Moderate threshold softening',
+          policy: {
+            buyScoreThreshold: 0.35,
+            sellScoreThreshold: -0.35,
+            buyRiskThreshold: 0.35,
+            buyScoreThresholdAddRiskOff: 0.12,
+          },
+        },
+        {
+          id: 'thresholds_with_reweight',
+          name: 'Thresholds + reweight',
+          description: 'Moderate thresholds and reduced valuation weight',
+          policy: {
+            buyScoreThreshold: 0.35,
+            sellScoreThreshold: -0.35,
+            buyRiskThreshold: 0.35,
+            buyScoreThresholdAddRiskOff: 0.12,
+          },
+          aggregateWeights: {
+            technical: 0.39,
+            fundamentals: 0.31,
+            valuation: 0.12,
+            sentiment: 0.18,
+          },
+        },
+      ],
+    });
 
     await writeJson(parityFile, {
       config: { tickers: ['MSFT', 'AAPL'], startDate: '2026-01-01', endDate: '2026-01-31' },
@@ -35,7 +81,11 @@ describe('offline policy review', () => {
           ticker: 'AAPL',
           aggregateScore: 0.4,
           riskScore: 0.7,
+          technicalScore: 0.4,
+          fundamentalsScore: 0.5,
           valuationScore: -1,
+          sentimentScore: 0.1,
+          regimeState: 'risk_on',
           rawAction: 'HOLD',
           finalAction: 'HOLD',
         },
@@ -44,7 +94,11 @@ describe('offline policy review', () => {
           ticker: 'MSFT',
           aggregateScore: -0.3,
           riskScore: 0.8,
+          technicalScore: -0.3,
+          fundamentalsScore: -0.2,
           valuationScore: -1,
+          sentimentScore: 0,
+          regimeState: 'risk_off',
           rawAction: 'HOLD',
           finalAction: 'HOLD',
         },
@@ -63,7 +117,11 @@ describe('offline policy review', () => {
                 ticker: 'NVDA',
                 aggregateScore: 0.02,
                 riskScore: 0.6,
+                technicalScore: 0.02,
+                fundamentalsScore: 0.2,
                 valuationScore: -1,
+                sentimentScore: 0.05,
+                regimeState: 'risk_off',
                 rawAction: 'HOLD',
                 finalAction: 'HOLD',
               },
@@ -76,7 +134,11 @@ describe('offline policy review', () => {
                 ticker: 'TSLA',
                 aggregateScore: 0.35,
                 riskScore: 0.9,
+                technicalScore: 0.35,
+                fundamentalsScore: 0.2,
                 valuationScore: -1,
+                sentimentScore: 0.1,
+                regimeState: 'risk_on',
                 rawAction: 'HOLD',
                 finalAction: 'HOLD',
               },
@@ -93,7 +155,8 @@ describe('offline policy review', () => {
     });
 
     return buildOfflinePolicyReviewReport({
-      directories: [tmpDir],
+      files: [parityFile, walkForwardFile, summaryOnlyFile],
+      scenarioManifestPath: scenarioManifestFile,
     });
   }
 
@@ -142,8 +205,10 @@ describe('offline policy review', () => {
     const report = await buildFixtureReport();
 
     const bySet = new Map(
-      report.replay.actionCountsByThresholdSet.map((item) => [item.thresholdSet, item.actionCounts]),
+      report.replay.actionCountsByThresholdReplaySet.map((item) => [item.thresholdSet, item.actionCounts]),
     );
+    expect(report.replay.thresholdReplayBaselineSetName).toBe('A');
+    expect(report.replay.actionCountsThresholdReplayBaseline).toEqual({ BUY: 0, SELL: 0, HOLD: 4 });
 
     expect(bySet.get('A')).toEqual({ BUY: 0, SELL: 0, HOLD: 4 });
     expect(bySet.get('B')).toEqual({ BUY: 2, SELL: 0, HOLD: 2 });
@@ -192,7 +257,7 @@ describe('offline policy review', () => {
     const sortedArtifactPaths = [...artifactPaths].sort((a, b) => a.localeCompare(b));
     expect(artifactPaths).toEqual(sortedArtifactPaths);
 
-    expect(report.replay.actionCountsByThresholdSet.map((item) => item.thresholdSet)).toEqual([
+    expect(report.replay.actionCountsByThresholdReplaySet.map((item) => item.thresholdSet)).toEqual([
       'A',
       'B',
       'C',
@@ -204,6 +269,94 @@ describe('offline policy review', () => {
     );
     expect(matrixOrder[0]).toBe('A|saved');
     expect(matrixOrder[matrixOrder.length - 1]).toBe('D|0');
+
+    expect(report.calibrationScenarios).not.toBeNull();
+    const scenarioIds = report.calibrationScenarios?.scenarios.map((item) => item.id);
+    expect(scenarioIds).toEqual(['baseline', 'thresholds_only', 'thresholds_with_reweight']);
+  });
+
+  test('calibration scenarios include baseline-vs-scenario comparison with HOLD attribution', async () => {
+    const report = await buildFixtureReport();
+    expect(report.calibrationScenarios).not.toBeNull();
+    const scenarios = report.calibrationScenarios?.scenarios ?? [];
+    const byId = new Map(scenarios.map((scenario) => [scenario.id, scenario]));
+    expect(report.calibrationScenarios?.baselineScenarioId).toBe('baseline');
+
+    const baseline = byId.get('baseline');
+    const thresholdsOnly = byId.get('thresholds_only');
+    const thresholdsWithReweight = byId.get('thresholds_with_reweight');
+    expect(baseline?.actionCounts).toEqual({ BUY: 0, SELL: 0, HOLD: 4 });
+    expect(thresholdsOnly?.actionCounts).toEqual({ BUY: 2, SELL: 0, HOLD: 2 });
+    expect(thresholdsWithReweight?.actionCounts).toEqual({ BUY: 0, SELL: 0, HOLD: 4 });
+
+    expect(thresholdsOnly?.holdFlipAttribution).toEqual({
+      baselineHoldRows: 4,
+      holdToBuy: 2,
+      holdToSell: 0,
+      holdToNonHold: 2,
+      holdStayedHold: 2,
+    });
+    expect(thresholdsOnly?.deltaVsBaseline).toEqual({
+      buyDelta: 2,
+      sellDelta: 0,
+      holdDelta: -2,
+      holdToNonHoldDelta: 2,
+    });
+    expect(thresholdsWithReweight?.diagnostics.rowsUsingReweightedAggregate).toBe(4);
+    expect(thresholdsWithReweight?.diagnostics.rowsMissingComponentBreakdownForReweight).toBe(0);
+    expect(thresholdsWithReweight?.diagnostics.rowsUsingRiskOffUplift).toBe(2);
+  });
+
+  test('distinguishes threshold replay baseline from scenario baseline for risk_off rows', async () => {
+    const rowsFile = path.join(tmpDir, 'risk-off-row.json');
+    const scenarioManifestFile = path.join(tmpDir, 'scenario-manifest.json');
+
+    await writeJson(rowsFile, {
+      rows: [
+        {
+          asOfDate: '2026-01-06',
+          ticker: 'AAPL',
+          aggregateScore: 0.52,
+          riskScore: 0.9,
+          technicalScore: 0.5,
+          fundamentalsScore: 0.5,
+          valuationScore: 0.2,
+          sentimentScore: 0.4,
+          regimeState: 'risk_off',
+          rawAction: 'HOLD',
+          finalAction: 'HOLD',
+        },
+      ],
+    });
+    await writeJson(scenarioManifestFile, {
+      version: 'test-risk-off',
+      scenarios: [
+        {
+          id: 'baseline',
+          name: 'Baseline',
+          description: 'Baseline with risk-off uplift',
+          policy: {
+            buyScoreThreshold: 0.5,
+            sellScoreThreshold: -0.45,
+            buyRiskThreshold: 0.35,
+            buyScoreThresholdAddRiskOff: 0.12,
+          },
+        },
+      ],
+    });
+
+    const report = await buildOfflinePolicyReviewReport({
+      files: [rowsFile],
+      scenarioManifestPath: scenarioManifestFile,
+    });
+
+    // Threshold replay Set A does not include regime buy uplift and BUYs this row.
+    expect(report.replay.actionCountsThresholdReplayBaseline).toEqual({ BUY: 1, SELL: 0, HOLD: 0 });
+
+    // Calibration baseline includes risk-off uplift and therefore keeps this row HOLD.
+    const baselineScenario = report.calibrationScenarios?.scenarios.find((scenario) => scenario.id === 'baseline');
+    expect(baselineScenario?.actionCounts).toEqual({ BUY: 0, SELL: 0, HOLD: 1 });
+    expect(baselineScenario?.holdFlipAttribution.baselineHoldRows).toBe(1);
   });
 
   test('empty input set handled cleanly', async () => {

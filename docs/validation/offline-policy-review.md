@@ -12,6 +12,8 @@ Use already-saved parity validation artifacts to quantify signal sparsity under:
 
 This is intended to support policy review decisions before any live-policy changes.
 
+The tool also supports offline calibration scenario evaluation from a static manifest.
+
 ## Inputs
 
 - Directory scan: `.dexter/signal-engine/validation/*.json`
@@ -25,8 +27,9 @@ A JSON report is written under `.dexter/signal-engine/validation/` with:
 
 - per-artifact row coverage
 - row payload counts and replayable row counts
-- action counts under current thresholds
-- action counts under Sets A/B/C/D
+- threshold replay action counts:
+  - `actionCountsThresholdReplayBaseline`
+  - `actionCountsByThresholdReplaySet` (Sets A/B/C/D)
 - HOLD flip attribution with mutually exclusive buckets:
   - `thresholdOnly`
   - `valuationOnly`
@@ -35,6 +38,16 @@ A JSON report is written under `.dexter/signal-engine/validation/` with:
   - `totalFlippedByAnyScenario` (`thresholdOnly + valuationOnly + combinedOnly`, equivalent to `baselineHoldRows - noFlip`)
 - valuation sensitivity at Set A
 - combined threshold + valuation matrix
+- calibration scenario comparison (baseline vs named scenarios):
+  - per-scenario action counts
+  - HOLD flip attribution versus baseline
+  - delta vs baseline counts
+  - scenario diagnostics (reweight usage, missing component breakdown, risk-off uplift usage)
+
+Important baseline semantics:
+
+- `replay.*thresholdReplay*` fields are a simplified threshold-replay sensitivity baseline.
+- `calibrationScenarios.baseline` is the canonical live-equivalent offline baseline in this report (includes risk-off buy uplift).
 
 ## Threshold sets used
 
@@ -44,6 +57,15 @@ A JSON report is written under `.dexter/signal-engine/validation/` with:
 - Set D: BUY `>= 0.15`, SELL `<= -0.15`
 
 BUY replay also keeps the current risk requirement `riskScore > 0.35`.
+
+## Calibration scenarios
+
+- Default manifest path: `src/signal-engine/validation/offline-calibration-scenarios.v1.json`
+- Scenario intent:
+  - keep calibration scenario baseline aligned to current policy
+  - evaluate conservative threshold softening first
+  - optionally test lighter risk-off uplift and valuation-weight rebalance
+  - keep this strictly offline (no live config mutation)
 
 ## Commands
 
@@ -63,6 +85,12 @@ Run with mixed directory + extra file:
 
 ```bash
 npm run validation:offline-policy-review -- --dir .dexter/signal-engine/validation --extra-file /tmp/parity-aapl-rows.json
+```
+
+Run with explicit scenario manifest:
+
+```bash
+npm run validation:offline-policy-review -- --scenario-manifest src/signal-engine/validation/offline-calibration-scenarios.v1.json --json
 ```
 
 ## Guardrails

@@ -48,6 +48,11 @@ function parseArgs(argv: string[]): CliArgs {
       i += 1;
       continue;
     }
+    if (arg === '--scenario-manifest' && argv[i + 1]) {
+      out.scenarioManifestPath = argv[i + 1].trim();
+      i += 1;
+      continue;
+    }
     if (arg === '--json') {
       out.json = true;
       continue;
@@ -70,6 +75,7 @@ function printHelp(): void {
   console.log('  --dir, -d <path[,path]>   Directory to scan for JSON artifacts');
   console.log('  --file, -f <path[,path]>  Explicit JSON artifact file(s)');
   console.log('  --extra-file <path>       Optional extra JSON (for example /tmp/parity-aapl-rows.json)');
+  console.log('  --scenario-manifest <path> Optional calibration scenario manifest JSON path');
   console.log('  --out <path>              Output JSON path (default under .dexter/signal-engine/validation/)');
   console.log('  --json                    Print JSON report to stdout instead of persisting');
   console.log('  --help, -h                Show this help');
@@ -85,6 +91,7 @@ async function main(): Promise<void> {
   const report = await buildOfflinePolicyReviewReport({
     directories: args.directories,
     files: args.files,
+    scenarioManifestPath: args.scenarioManifestPath,
     outputPath: args.outputPath,
   });
 
@@ -98,7 +105,7 @@ async function main(): Promise<void> {
   console.log(`Artifacts: ${report.artifacts.length}`);
   console.log(`Replayable rows: ${report.replay.replayableRows}`);
   console.log(
-    `Current actions (Set A): BUY=${report.replay.actionCountsCurrent.BUY} SELL=${report.replay.actionCountsCurrent.SELL} HOLD=${report.replay.actionCountsCurrent.HOLD}`,
+    `Threshold replay (Set A) actions: BUY=${report.replay.actionCountsThresholdReplayBaseline.BUY} SELL=${report.replay.actionCountsThresholdReplayBaseline.SELL} HOLD=${report.replay.actionCountsThresholdReplayBaseline.HOLD}`,
   );
   console.log(`Warnings: ${report.warnings.length}`);
   console.log(`JSON: ${path.relative(process.cwd(), outPath)}`);
