@@ -82,3 +82,38 @@ Use output labels as descriptive buckets only:
 
 These labels are **not** claims of predictive power.
 
+## Evidence Report Gate
+
+After generating the separation artifact, run the evidence report before considering any training work:
+
+```bash
+npm run research:multiticker-evidence -- \
+  --in .dexter/signal-engine/research/analysis/multiticker-separation-<stamp>.json
+```
+
+The evidence report is still descriptive research only. It consumes the local separation JSON and applies deterministic gates; it does not fetch data, train a model, tune policy, change production signals, or change any backtest/walk-forward behavior.
+
+Default evidence thresholds:
+
+- ticker agreement ratio for broad agreement: `0.75`
+- minimum stable ticker count: `5`
+- ticker-specific maximum agreement ratio: `0.50`
+- non-trivial pooled spread: `0.002`
+- very small pooled spread: `0.002`
+
+Evidence classifications:
+
+- `research_candidate`: broad ticker agreement, at least 5 stable tickers, no pooled-vs-majority sign mismatch, no weak pooled spread, and no pooled half sign flip. This means it passed a descriptive research gate only; it is not training-ready or production-ready.
+- `watchlist`: broad ticker agreement and at least 5 stable tickers, but weak pooled spread or pooled half sign flip keeps it research-only.
+- `misleading_pooled`: pooled direction disagrees with the majority ticker direction.
+- `unstable`: pooled half sign flip or unstable ticker count is at least the stable ticker count.
+- `ticker_specific`: low ticker agreement with a non-trivial pooled spread.
+- `weak`: weak or very small pooled spread.
+
+Training readiness values are gates, not approvals:
+
+- `no_train`: not suitable for training consideration.
+- `expand_universe`: inspect more tickers/time periods before interpretation hardens.
+- `research_only_candidate`: acceptable for deeper research discussion only, still not production.
+
+Pooled results can hide ticker disagreement. Always review `misleading_pooled`, `tickerAgreementCount`, `tickerDisagreementCount`, and `unstableTickerCount` before treating a pooled spread as useful evidence.

@@ -30,6 +30,7 @@
     "research:yahoo:normalize": "bun run src/signal-engine/research/yahoo-history.cli.ts",
     "research:price-features": "bun run src/signal-engine/research/price-feature-labels.cli.ts",
     "research:multiticker-separation": "bun run src/signal-engine/research/multiticker-separation-analysis.cli.ts",
+    "research:multiticker-evidence": "bun run src/signal-engine/research/multiticker-evidence-report.cli.ts",
     "ml:dataset": "bun run src/signal-engine/ml-dataset.cli.ts",
     "ml:sidecar": "bun run src/signal-engine/ml-sidecar.cli.ts",
     "ops:daily": "bun run src/signal-engine/daily-operator.cli.ts",
