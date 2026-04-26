@@ -5,10 +5,13 @@ import { PriceFeatureLabelArtifact, PriceFeatureLabelRow } from './price-feature
 export type ProfitStrategyId =
   | 'drawdown_reversal_20d'
   | 'ret_1d_reversal_5d'
-  | 'sma20_gap_reversion_20d';
+  | 'sma20_gap_reversion_20d'
+  | string;
 
 export type RebalanceFrequency = 'daily' | 'weekly';
 export type ProfitVerdict = 'reject' | 'weak' | 'research_candidate' | 'expand_universe';
+export type ProfitFeature = 'drawdown_252d' | 'ret_1d' | 'ret_5d' | 'ret_20d' | 'sma_20_gap' | 'sma_50_gap' | 'vol_20d';
+export type ProfitRankDirection = 'ascending' | 'descending';
 
 export interface ProfitBacktestConfig {
   inputPath?: string;
@@ -23,8 +26,8 @@ export interface ProfitBacktestConfig {
 
 export interface ProfitStrategyConfig {
   id: ProfitStrategyId;
-  feature: 'drawdown_252d' | 'ret_1d' | 'sma_20_gap';
-  rankDirection: 'ascending';
+  feature: ProfitFeature;
+  rankDirection: ProfitRankDirection;
   holdDays: number;
   rebalanceFrequency: RebalanceFrequency;
   topN?: number;
@@ -150,6 +153,16 @@ const DEFAULT_COST_BPS = 10;
 const DEFAULT_TOP_N = 2;
 const DEFAULT_MAX_POSITIONS = 3;
 const DEFAULT_MIN_TRADES_FOR_CANDIDATE = 20;
+const SUPPORTED_PROFIT_FEATURES = new Set<ProfitFeature>([
+  'drawdown_252d',
+  'ret_1d',
+  'ret_5d',
+  'ret_20d',
+  'sma_20_gap',
+  'sma_50_gap',
+  'vol_20d',
+]);
+const SUPPORTED_RANK_DIRECTIONS = new Set<ProfitRankDirection>(['ascending', 'descending']);
 const TRADING_DAYS_PER_YEAR = 252;
 const CONFIG_VALIDATION_SOURCE: ValidationSource = {
   initialCapital: 'initialCapital',
@@ -252,8 +265,15 @@ export function validateProfitBacktestConfig(
   assertNonNegativeInteger(config.minTradesForCandidate, labels.minTradesForCandidate);
 
   for (const strategy of config.strategies ?? []) {
+    if (!SUPPORTED_PROFIT_FEATURES.has(strategy.feature)) {
+      throw new Error(`Invalid feature for ${strategy.id}: ${String(strategy.feature)}.`);
+    }
+    if (!SUPPORTED_RANK_DIRECTIONS.has(strategy.rankDirection)) {
+      throw new Error(`Invalid rankDirection for ${strategy.id}: ${String(strategy.rankDirection)}.`);
+    }
     assertPositiveInteger(strategy.topN, `${strategy.id}.topN`);
     assertPositiveInteger(strategy.maxPositions, `${strategy.id}.maxPositions`);
+    assertPositiveInteger(strategy.holdDays, `${strategy.id}.holdDays`);
   }
 }
 
@@ -342,7 +362,8 @@ function selectRows(rows: PriceFeatureLabelRow[], strategy: ProfitStrategyConfig
     .sort((a, b) => {
       const aValue = asNumber(a[strategy.feature]) ?? 0;
       const bValue = asNumber(b[strategy.feature]) ?? 0;
-      return aValue - bValue || a.ticker.localeCompare(b.ticker);
+      const valueSort = strategy.rankDirection === 'ascending' ? aValue - bValue : bValue - aValue;
+      return valueSort || a.ticker.localeCompare(b.ticker);
     })
     .slice(0, limit);
 }
@@ -720,7 +741,7 @@ export function buildProfitBacktestReport(
     return {
       id: strategy.id,
       kind: 'strategy',
-      description: `${strategy.id}: rank ${strategy.feature} ascending, buy up to ${strategy.topN ?? normalizedConfig.topN}, hold ${strategy.holdDays} trading days.`,
+      description: `${strategy.id}: rank ${strategy.feature} ${strategy.rankDirection}, buy up to ${strategy.topN ?? normalizedConfig.topN}, hold ${strategy.holdDays} trading days.`,
       config: strategy,
       metrics,
       profitVerdict: profitVerdict(metrics, buyHoldMetrics, normalizedConfig.minTradesForCandidate),
