@@ -167,6 +167,12 @@ export interface SelectionDiagnostics {
   notes: string[];
 }
 
+export interface RiskControlSimulationOptions {
+  deepPullbackThreshold?: number;
+  cooldownLossThreshold?: number;
+  cooldownTradingDays?: number;
+}
+
 export interface SimulatedRiskControl {
   equityCurve: EquityPoint[];
   trades: ProfitTrade[];
@@ -206,6 +212,14 @@ const ALL_WINDOWS: RiskControlWindowId[] = ['full', 'research', 'holdout'];
 const DEEP_PULLBACK_THRESHOLD = -0.1;
 const COOLDOWN_LOSS_THRESHOLD = -0.08;
 const COOLDOWN_TRADING_DAYS = 20;
+
+function normalizeSimulationOptions(options: RiskControlSimulationOptions = {}): Required<RiskControlSimulationOptions> {
+  return {
+    deepPullbackThreshold: options.deepPullbackThreshold ?? DEEP_PULLBACK_THRESHOLD,
+    cooldownLossThreshold: options.cooldownLossThreshold ?? COOLDOWN_LOSS_THRESHOLD,
+    cooldownTradingDays: options.cooldownTradingDays ?? COOLDOWN_TRADING_DAYS,
+  };
+}
 
 function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -288,7 +302,9 @@ export function selectSma20RiskControlCandidates(
   variantId: RiskControlVariantId,
   topN: number,
   cooldownUntilIndex: Map<string, number>,
+  options: RiskControlSimulationOptions = {},
 ): { selected: PriceFeatureLabelRow[]; diagnostics: SelectionDiagnostics } {
+  const normalizedOptions = normalizeSimulationOptions(options);
   const dateIndex = ctx.dates.indexOf(signalDate);
   const notes: string[] = [];
   if (variantUsesHighVolSkip(variantId) && isHighVol(ctx, signalDate)) {
@@ -311,7 +327,7 @@ export function selectSma20RiskControlCandidates(
     const sector = sectorForTicker(row.ticker);
     const cooldownUntil = cooldownUntilIndex.get(row.ticker);
     const blockedByCooldown = cooldownUntil !== undefined && dateIndex >= 0 && dateIndex <= cooldownUntil;
-    const blockedByDeepPullback = variantUsesDeepPullback(variantId) && gap !== null && gap <= DEEP_PULLBACK_THRESHOLD;
+    const blockedByDeepPullback = variantUsesDeepPullback(variantId) && gap !== null && gap <= normalizedOptions.deepPullbackThreshold;
     const blockedBySector = variantUsesSectorCap(variantId) && usedSectors.has(sector);
     if (blockedByDeepPullback || blockedBySector || (variantUsesCooldown(variantId) && blockedByCooldown)) {
       skippedCandidates += 1;
@@ -322,7 +338,7 @@ export function selectSma20RiskControlCandidates(
     if (selected.length >= topN) break;
   }
 
-  if (variantUsesDeepPullback(variantId)) notes.push('Excluded candidates with sma_20_gap <= -0.10.');
+  if (variantUsesDeepPullback(variantId)) notes.push(`Excluded candidates with sma_20_gap <= ${normalizedOptions.deepPullbackThreshold}.`);
   if (variantUsesSectorCap(variantId)) notes.push('Applied max one selected name per sector bucket per rebalance.');
   if (variantUsesCooldown(variantId)) notes.push('Applied 20-trading-day ticker cooldown after closed losses <= -8%.');
   return { selected, diagnostics: { skippedCandidates, skippedRebalance: false, notes } };
@@ -334,7 +350,9 @@ export function simulateSma20RiskControlStrategy(
   topN: number,
   costBps: number,
   initialCapital: number,
+  options: RiskControlSimulationOptions = {},
 ): SimulatedRiskControl {
+  const normalizedOptions = normalizeSimulationOptions(options);
   const ctx = buildSma20RiskControlContext(artifact);
   const cost = costBps / 10_000;
   let cash = initialCapital;
@@ -364,8 +382,8 @@ export function simulateSma20RiskControlStrategy(
       turnoverNotional += grossProceeds;
       const grossReturn = exitPrice / position.entryPrice - 1;
       const netReturn = (exitPrice * (1 - cost)) / (position.entryPrice * (1 + cost)) - 1;
-      if (variantUsesCooldown(variantId) && netReturn <= COOLDOWN_LOSS_THRESHOLD) {
-        cooldownUntilIndex.set(position.ticker, dateIndex + COOLDOWN_TRADING_DAYS);
+      if (variantUsesCooldown(variantId) && netReturn <= normalizedOptions.cooldownLossThreshold) {
+        cooldownUntilIndex.set(position.ticker, dateIndex + normalizedOptions.cooldownTradingDays);
       }
       trades.push({
         strategyId: `sma20_${variantId}_top${topN}_${costBps}bps`,
@@ -417,6 +435,7 @@ export function simulateSma20RiskControlStrategy(
           variantId,
           topN,
           cooldownUntilIndex,
+          normalizedOptions,
         );
         skippedCandidates += selection.diagnostics.skippedCandidates;
         for (const note of selection.diagnostics.notes) notes.add(note);
