@@ -9,6 +9,11 @@ of 64 robustness-grid rows remained `research_candidate`.
 The goal is to stop over-tuning one fragile SMA20 variant and instead identify
 which broad strategy family, if any, deserves deeper research.
 
+Current status note: later SMA20 holdout validation found `holdout_fragile`,
+and the regime/risk diagnostic found `risk_filter_needed`. Treat the
+`sma20_gap_reversion` family result here as historical research triage only,
+not production, training, or live-trading evidence.
+
 ## Scope
 
 This is research-only historical simulation.
