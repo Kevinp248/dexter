@@ -2,6 +2,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PriceFeatureLabelArtifact, PriceFeatureLabelRow } from './price-feature-labels.js';
 import { buildProfitBacktestReport, ProfitVerdict, type ProfitStrategyConfig } from './profit-backtest.js';
+import {
+  assertNonNegativeNumber,
+  assertPositiveInteger,
+  assertPositiveNumber,
+  countBy,
+  validateDateWindow,
+  validateNonOverlappingWindows,
+} from './research-utils.js';
 
 export type HoldoutWindowId = 'research' | 'holdout';
 export type HoldoutVerdict = 'holdout_pass' | 'holdout_fragile' | 'holdout_fail';
@@ -147,37 +155,8 @@ const BASE_SMA20_STRATEGY: ProfitStrategyConfig = {
   rebalanceFrequency: 'weekly',
 };
 
-function assertDate(value: string, label: string): void {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new Error(`Invalid date for ${label}: ${value}. Expected YYYY-MM-DD.`);
-  }
-}
-
 function validateWindow(window: HoldoutWindowConfig): void {
-  assertDate(window.startDate, `${window.windowId}.startDate`);
-  assertDate(window.endDate, `${window.windowId}.endDate`);
-  if (window.startDate > window.endDate) {
-    throw new Error(`Invalid ${window.windowId} window: startDate ${window.startDate} is after endDate ${window.endDate}.`);
-  }
-}
-
-function assertPositiveNumber(value: number | undefined, label: string): void {
-  if (value === undefined) return;
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`Invalid value for ${label}: ${value}. Expected a positive number.`);
-  }
-}
-
-function assertPositiveInteger(value: number, label: string): void {
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`Invalid value for ${label}: ${value}. Expected a positive integer.`);
-  }
-}
-
-function assertNonNegativeNumber(value: number, label: string): void {
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`Invalid value for ${label}: ${value}. Expected a non-negative number.`);
-  }
+  validateDateWindow(window, window.windowId);
 }
 
 export function validateSma20HoldoutConfig(config: Sma20HoldoutValidationConfig): void {
@@ -199,11 +178,7 @@ export function validateSma20HoldoutConfig(config: Sma20HoldoutValidationConfig)
 
   validateWindow(researchWindow);
   validateWindow(holdoutWindow);
-  if (researchWindow.endDate >= holdoutWindow.startDate) {
-    throw new Error(
-      `Invalid holdout split: research endDate ${researchWindow.endDate} must be before holdout startDate ${holdoutWindow.startDate}.`,
-    );
-  }
+  validateNonOverlappingWindows(researchWindow, holdoutWindow, 'holdout split');
 }
 
 function normalizeConfig(config: Sma20HoldoutValidationConfig): Sma20HoldoutValidationReport['config'] {
@@ -289,12 +264,7 @@ function windowCoverage(window: HoldoutWindowConfig, artifact: PriceFeatureLabel
 }
 
 function countByVerdict(rows: Sma20HoldoutRow[]): Record<ProfitVerdict, number> {
-  return {
-    reject: rows.filter((row) => row.profitVerdict === 'reject').length,
-    weak: rows.filter((row) => row.profitVerdict === 'weak').length,
-    research_candidate: rows.filter((row) => row.profitVerdict === 'research_candidate').length,
-    expand_universe: rows.filter((row) => row.profitVerdict === 'expand_universe').length,
-  };
+  return countBy(rows.map((row) => row.profitVerdict), ['reject', 'weak', 'research_candidate', 'expand_universe']);
 }
 
 function compareNullableDesc(a: number | null, b: number | null): number {

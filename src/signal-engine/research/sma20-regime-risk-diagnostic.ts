@@ -2,6 +2,17 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PriceFeatureLabelArtifact, PriceFeatureLabelRow } from './price-feature-labels.js';
 import { buildProfitBacktestReport, ProfitStrategyConfig, ProfitTrade, ProfitVerdict } from './profit-backtest.js';
+import {
+  assertNonNegativeInteger,
+  assertNonNegativeNumber,
+  assertPositiveInteger,
+  assertPositiveNumber,
+  mean,
+  median,
+  roundFinite,
+  validateDateWindow,
+  validateNonOverlappingWindows,
+} from './research-utils.js';
 
 export type MarketTrendBucket = 'market_up_20d' | 'market_flat_20d' | 'market_down_20d' | 'unknown';
 export type VolatilityBucket = 'low_vol' | 'medium_vol' | 'high_vol' | 'unknown';
@@ -132,46 +143,6 @@ const DEFAULT_FOCUS_CONFIGS = [
 const DEFAULT_RESEARCH_WINDOW = { startDate: '2021-01-04', endDate: '2024-12-31' };
 const DEFAULT_HOLDOUT_WINDOW = { startDate: '2025-01-01', endDate: '2026-04-24' };
 
-function assertPositiveNumber(value: number | undefined, label: string): void {
-  if (value === undefined) return;
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`Invalid value for ${label}: ${value}. Expected a positive number.`);
-  }
-}
-
-function assertNonNegativeNumber(value: number, label: string): void {
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`Invalid value for ${label}: ${value}. Expected a non-negative number.`);
-  }
-}
-
-function assertNonNegativeInteger(value: number | undefined, label: string): void {
-  if (value === undefined) return;
-  if (!Number.isInteger(value) || value < 0) {
-    throw new Error(`Invalid value for ${label}: ${value}. Expected a non-negative integer.`);
-  }
-}
-
-function assertPositiveInteger(value: number, label: string): void {
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`Invalid value for ${label}: ${value}. Expected a positive integer.`);
-  }
-}
-
-function assertDate(value: string, label: string): void {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new Error(`Invalid date for ${label}: ${value}. Expected YYYY-MM-DD.`);
-  }
-}
-
-function validateDateWindow(window: { startDate: string; endDate: string }, label: string): void {
-  assertDate(window.startDate, `${label}.startDate`);
-  assertDate(window.endDate, `${label}.endDate`);
-  if (window.startDate > window.endDate) {
-    throw new Error(`Invalid ${label} window: startDate ${window.startDate} is after endDate ${window.endDate}.`);
-  }
-}
-
 export function validateSma20RegimeRiskDiagnosticConfig(config: Sma20RegimeRiskDiagnosticConfig): void {
   assertPositiveNumber(config.initialCapital, 'initialCapital');
   assertNonNegativeInteger(config.minTradesForCandidate, 'minTradesForCandidate');
@@ -189,11 +160,7 @@ export function validateSma20RegimeRiskDiagnosticConfig(config: Sma20RegimeRiskD
   const holdoutWindow = config.holdoutWindow ?? DEFAULT_HOLDOUT_WINDOW;
   validateDateWindow(researchWindow, 'research');
   validateDateWindow(holdoutWindow, 'holdout');
-  if (researchWindow.endDate >= holdoutWindow.startDate) {
-    throw new Error(
-      `Invalid diagnostic split: research endDate ${researchWindow.endDate} must be before holdout startDate ${holdoutWindow.startDate}.`,
-    );
-  }
+  validateNonOverlappingWindows(researchWindow, holdoutWindow, 'diagnostic split');
 }
 
 export const SECTOR_BY_TICKER: Record<string, SectorBucket> = {
@@ -235,23 +202,6 @@ interface ArtifactContext {
   tickerDateRows: Map<string, Map<string, PriceFeatureLabelRow>>;
   dates: string[];
   volTerciles: { low: number; high: number };
-}
-
-function round(value: number | null, digits = 10): number | null {
-  if (value === null || !Number.isFinite(value)) return null;
-  return Number(value.toFixed(digits));
-}
-
-function mean(values: number[]): number | null {
-  if (!values.length) return null;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function median(values: number[]): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
 function priceFor(row: PriceFeatureLabelRow | undefined): number | null {
@@ -394,7 +344,7 @@ function enrichTrades(
       breadthBucket: breadthBucket(breadth),
       pullbackSeverityBucket: pullbackSeverityBucket(avgGap),
       sector: sectorForTicker(trade.ticker),
-      approximatePnl: round(trade.capitalAllocated * trade.netReturn, 6) ?? trade.capitalAllocated * trade.netReturn,
+      approximatePnl: roundFinite(trade.capitalAllocated * trade.netReturn, 6) ?? trade.capitalAllocated * trade.netReturn,
     };
   });
 }
@@ -406,13 +356,13 @@ function summarizeTrades(bucket: string, trades: DiagnosticTrade[], totalAbsPnl:
   return {
     bucket,
     trades: trades.length,
-    averageTradeReturn: round(mean(returns)),
-    medianTradeReturn: round(median(returns)),
-    winRate: trades.length ? round(trades.filter((trade) => trade.netReturn > 0).length / trades.length) : null,
-    approximatePnl: round(approximatePnl, 6) ?? approximatePnl,
+    averageTradeReturn: roundFinite(mean(returns)),
+    medianTradeReturn: roundFinite(median(returns)),
+    winRate: trades.length ? roundFinite(trades.filter((trade) => trade.netReturn > 0).length / trades.length) : null,
+    approximatePnl: roundFinite(approximatePnl, 6) ?? approximatePnl,
     worstTrade: sorted[0] ?? null,
     bestTrade: sorted[sorted.length - 1] ?? null,
-    contributionShare: totalAbsPnl > 0 ? round(approximatePnl / totalAbsPnl) : null,
+    contributionShare: totalAbsPnl > 0 ? roundFinite(approximatePnl / totalAbsPnl) : null,
   };
 }
 
