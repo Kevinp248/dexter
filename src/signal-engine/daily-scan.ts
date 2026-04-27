@@ -128,6 +128,51 @@ function parseArgs(argv: string[]): ParsedCliArgs {
       continue;
     }
 
+    if (arg === '--execution-assumption-version' && argv[i + 1]) {
+      options.executionConfig = options.executionConfig ?? {};
+      options.executionConfig.assumptionVersion = argv[i + 1].trim();
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--earnings-blackout-days' && argv[i + 1]) {
+      const value = Number(argv[i + 1]);
+      if (Number.isFinite(value) && value >= 0) {
+        options.earningsConfig = options.earningsConfig ?? {};
+        options.earningsConfig.blackoutTradingDays = Math.floor(value);
+      }
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--earnings-missing-coverage-policy' && argv[i + 1]) {
+      const value = argv[i + 1].trim().toLowerCase();
+      if (value === 'warn_only' || value === 'suppress_buy') {
+        options.earningsConfig = options.earningsConfig ?? {};
+        options.earningsConfig.missingCoveragePolicy = value;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--regime-strict-buy-gate-risk-off' && argv[i + 1]) {
+      const value = argv[i + 1].trim().toLowerCase();
+      options.regimeConfig = options.regimeConfig ?? {};
+      options.regimeConfig.strictBuyGateInRiskOff = value === '1' || value === 'true';
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--regime-buy-threshold-add-risk-off' && argv[i + 1]) {
+      const value = Number(argv[i + 1]);
+      if (Number.isFinite(value)) {
+        options.regimeConfig = options.regimeConfig ?? {};
+        options.regimeConfig.buyScoreThresholdAddRiskOff = value;
+      }
+      i += 1;
+      continue;
+    }
+
     if (arg === '--append-csv') {
       if (argv[i + 1] && !argv[i + 1].startsWith('--')) {
         appendCsvPath = argv[i + 1];

@@ -27,7 +27,7 @@ export interface SignalEngineConfig {
     meanReversionWeight: number;
     momentumWeight: number;
     volatilityWeight: number;
-    statArbWeight: number;
+    macdWeight: number;
     signalBullishThreshold: number;
     signalBearishThreshold: number;
     momentumBullishThreshold: number;
@@ -35,7 +35,8 @@ export interface SignalEngineConfig {
     meanReversionZScoreThreshold: number;
     meanReversionBandLow: number;
     meanReversionBandHigh: number;
-    statArbZScoreThreshold: number;
+    macdAmplitudeScale: number;
+    macdSpreadScale: number;
     volatilityPercentileLow: number;
     volatilityPercentileHigh: number;
   };
@@ -47,6 +48,8 @@ export interface SignalEngineConfig {
       netMarginWeak: number;
       operatingMarginStrong: number;
       operatingMarginWeak: number;
+      roicStrong: number;
+      roicWeak: number;
     };
     growth: {
       revenueStrong: number;
@@ -70,6 +73,18 @@ export interface SignalEngineConfig {
       psStrong: number;
       psWeak: number;
     };
+    cashFlowQuality: {
+      fcfConversionStrong: number;
+      fcfConversionWeak: number;
+    };
+    pillarWeights: {
+      profitability: number;
+      growth: number;
+      health: number;
+      cashFlowQuality: number;
+      capitalEfficiency: number;
+      valuationRatios: number;
+    };
     aggregateSignalThreshold: number;
   };
   valuation: {
@@ -81,6 +96,17 @@ export interface SignalEngineConfig {
     ownerEarningsDiscountRate: number;
     ownerEarningsMarginOfSafety: number;
     fairPe: number;
+    pegGrowthMin: number;
+    pegGrowthMax: number;
+    sectorFairPe: Record<
+      string,
+      {
+        baseFairPe: number;
+        minFairPe: number;
+        maxFairPe: number;
+        pegSensitivity: number;
+      }
+    >;
     residualIncomeGrowthMultiplier: number;
     weights: {
       dcf: number;
@@ -118,6 +144,8 @@ export interface SignalEngineConfig {
     volatilityCheckThreshold: number;
     expensivePeThreshold: number;
     concentrationCorrelationThreshold: number;
+    correlationMinObservations: number;
+    correlationUnavailableMultiplier: number;
   };
   execution: {
     confidenceScaleMin: number;
@@ -125,12 +153,38 @@ export interface SignalEngineConfig {
     costMultiplierMax: number;
     defaultCostMultiplier: number;
     defaultMinimumEdgeAfterCostsBps: number;
+    assumptionVersion: string;
+    includeCostBreakdownInPayload: boolean;
+    includeAssumptionSource: boolean;
     holdingDays: number;
     regionCostBps: {
       US: { spread: number; slippage: number; fee: number; borrowDaily: number };
       CA: { spread: number; slippage: number; fee: number; borrowDaily: number };
     };
     fallbackEstimatedPrice: number;
+  };
+  earnings: {
+    enabled: boolean;
+    blackoutTradingDays: number;
+    buyPolicyInBlackout: 'suppress_to_hold';
+    missingCoveragePolicy: 'warn_only' | 'suppress_buy';
+    maxCoverageAgeDays: number;
+    reasonCodesEnabled: boolean;
+  };
+  regime: {
+    enabled: boolean;
+    volatilityTicker: string;
+    spySmaLookbackDays: number;
+    spySmaCalendarBufferMultiplier: number;
+    spySmaCalendarBufferExtraDays: number;
+    vixRiskOffThreshold: number;
+    strictBuyGateInRiskOff: boolean;
+    buyScoreThresholdAddRiskOff: number;
+    confidenceCapRiskOff: number;
+    maxAllocationMultiplierRiskOff: number;
+    confidenceCapUnknown: number;
+    maxAllocationMultiplierUnknown: number;
+    reasonCodesEnabled: boolean;
   };
   portfolio: {
     defaultMaxGrossExposurePct: number;
@@ -151,10 +205,10 @@ export interface SignalEngineConfig {
 const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
   version: '1.0.0',
   aggregateWeights: {
-    technical: 0.3,
-    fundamentals: 0.25,
-    valuation: 0.3,
-    sentiment: 0.15,
+    technical: 0.36,
+    fundamentals: 0.29,
+    valuation: 0.18,
+    sentiment: 0.17,
   },
   actions: {
     coverScoreThreshold: 0.15,
@@ -172,9 +226,9 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
   technical: {
     trendWeight: 0.25,
     meanReversionWeight: 0.2,
-    momentumWeight: 0.25,
+    momentumWeight: 0.22,
     volatilityWeight: 0.15,
-    statArbWeight: 0.15,
+    macdWeight: 0.18,
     signalBullishThreshold: 0.1,
     signalBearishThreshold: -0.1,
     momentumBullishThreshold: 0.03,
@@ -182,7 +236,8 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
     meanReversionZScoreThreshold: 2,
     meanReversionBandLow: 0.2,
     meanReversionBandHigh: 0.8,
-    statArbZScoreThreshold: 1.5,
+    macdAmplitudeScale: 0.02,
+    macdSpreadScale: 0.03,
     volatilityPercentileLow: 30,
     volatilityPercentileHigh: 70,
   },
@@ -194,6 +249,8 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
       netMarginWeak: 0.08,
       operatingMarginStrong: 0.15,
       operatingMarginWeak: 0.08,
+      roicStrong: 0.12,
+      roicWeak: 0.04,
     },
     growth: {
       revenueStrong: 0.1,
@@ -217,6 +274,18 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
       psStrong: 5,
       psWeak: 8,
     },
+    cashFlowQuality: {
+      fcfConversionStrong: 0.85,
+      fcfConversionWeak: 0.55,
+    },
+    pillarWeights: {
+      profitability: 0.24,
+      growth: 0.2,
+      health: 0.18,
+      cashFlowQuality: 0.14,
+      capitalEfficiency: 0.14,
+      valuationRatios: 0.1,
+    },
     aggregateSignalThreshold: 0.15,
   },
   valuation: {
@@ -228,6 +297,16 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
     ownerEarningsDiscountRate: 0.15,
     ownerEarningsMarginOfSafety: 0.75,
     fairPe: 20,
+    pegGrowthMin: -0.05,
+    pegGrowthMax: 0.25,
+    sectorFairPe: {
+      Technology: { baseFairPe: 24, minFairPe: 16, maxFairPe: 36, pegSensitivity: 40 },
+      Semiconductors: { baseFairPe: 22, minFairPe: 14, maxFairPe: 36, pegSensitivity: 38 },
+      Financials: { baseFairPe: 13, minFairPe: 9, maxFairPe: 18, pegSensitivity: 14 },
+      'Internet Services': { baseFairPe: 22, minFairPe: 14, maxFairPe: 34, pegSensitivity: 36 },
+      'E-commerce': { baseFairPe: 21, minFairPe: 13, maxFairPe: 32, pegSensitivity: 34 },
+      Unknown: { baseFairPe: 18, minFairPe: 12, maxFairPe: 26, pegSensitivity: 24 },
+    },
     residualIncomeGrowthMultiplier: 1.05,
     weights: {
       dcf: 0.35,
@@ -265,6 +344,8 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
     volatilityCheckThreshold: 0.45,
     expensivePeThreshold: 40,
     concentrationCorrelationThreshold: 0.75,
+    correlationMinObservations: 60,
+    correlationUnavailableMultiplier: 0.7,
   },
   execution: {
     confidenceScaleMin: 0.1,
@@ -272,12 +353,38 @@ const BASE_SIGNAL_CONFIG: SignalEngineConfig = {
     costMultiplierMax: 20,
     defaultCostMultiplier: 1,
     defaultMinimumEdgeAfterCostsBps: 0,
+    assumptionVersion: 'execution-defaults-v1',
+    includeCostBreakdownInPayload: true,
+    includeAssumptionSource: true,
     holdingDays: 5,
     regionCostBps: {
       US: { spread: 5, slippage: 7, fee: 1, borrowDaily: 2 },
       CA: { spread: 7, slippage: 10, fee: 1.5, borrowDaily: 2.5 },
     },
     fallbackEstimatedPrice: 100,
+  },
+  earnings: {
+    enabled: true,
+    blackoutTradingDays: 5,
+    buyPolicyInBlackout: 'suppress_to_hold',
+    missingCoveragePolicy: 'warn_only',
+    maxCoverageAgeDays: 45,
+    reasonCodesEnabled: true,
+  },
+  regime: {
+    enabled: true,
+    volatilityTicker: 'VIXY',
+    spySmaLookbackDays: 200,
+    spySmaCalendarBufferMultiplier: 1.6,
+    spySmaCalendarBufferExtraDays: 30,
+    vixRiskOffThreshold: 25,
+    strictBuyGateInRiskOff: false,
+    buyScoreThresholdAddRiskOff: 0.12,
+    confidenceCapRiskOff: 70,
+    maxAllocationMultiplierRiskOff: 0.7,
+    confidenceCapUnknown: 60,
+    maxAllocationMultiplierUnknown: 0.6,
+    reasonCodesEnabled: true,
   },
   portfolio: {
     defaultMaxGrossExposurePct: 1.0,
@@ -313,7 +420,11 @@ function applyConfigOverrides(
         assign(nextObj, value as Record<string, unknown>);
         continue;
       }
-      if (typeof value === 'number') {
+      if (
+        typeof value === 'number' ||
+        typeof value === 'string' ||
+        typeof value === 'boolean'
+      ) {
         target[key] = value;
       }
     }

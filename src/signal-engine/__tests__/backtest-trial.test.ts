@@ -15,6 +15,7 @@ function weekdayBars(startDate: string, endDate: string): PriceBar[] {
         high: price + 1,
         low: price - 1,
         close: price + 0.5,
+        adjustedClose: price + 0.5,
         volume: 1_000_000,
       });
       price += 1;

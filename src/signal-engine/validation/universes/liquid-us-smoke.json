@@ -1,0 +1,14 @@
+{
+  "name": "liquid-us-smoke",
+  "description": "Tiny US-only smoke universe for provider/data preflight checks.",
+  "survivorshipBiasWarning": "This static smoke universe is survivorship-biased and intended only for operational validation.",
+  "tickers": [
+    { "ticker": "AAPL", "region": "US", "sector": "Technology", "notes": "Provider-safe smoke ticker" },
+    { "ticker": "MSFT", "region": "US", "sector": "Technology", "notes": "Provider-safe smoke ticker" },
+    { "ticker": "NVDA", "region": "US", "sector": "Technology", "notes": "Provider-safe smoke ticker" },
+    { "ticker": "AMZN", "region": "US", "sector": "Consumer Discretionary", "notes": "Provider-safe smoke ticker" },
+    { "ticker": "GOOGL", "region": "US", "sector": "Communication Services", "notes": "Provider-safe smoke ticker" },
+    { "ticker": "JPM", "region": "US", "sector": "Financials", "notes": "Large-bank smoke coverage" },
+    { "ticker": "XOM", "region": "US", "sector": "Energy", "notes": "Energy smoke coverage" }
+  ]
+}

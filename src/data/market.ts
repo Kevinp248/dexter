@@ -8,6 +8,7 @@ export interface PriceBar {
   high: number;
   low: number;
   close: number;
+  adjustedClose: number;
   volume: number;
 }
 
@@ -37,6 +38,12 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
+function addDays(date: string, days: number): string {
+  const dt = new Date(`${date}T00:00:00.000Z`);
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
 function isDateInPast(date?: string): boolean {
   if (!date) return false;
   const normalized = date.slice(0, 10);
@@ -56,8 +63,55 @@ function isFinitePriceBar(bar: PriceBar): boolean {
     Number.isFinite(bar.high) &&
     Number.isFinite(bar.low) &&
     Number.isFinite(bar.close) &&
+    Number.isFinite(bar.adjustedClose) &&
     Number.isFinite(bar.volume)
   );
+}
+
+const AVAILABILITY_KEYS = [
+  'available_date',
+  'available_at',
+  'accepted_date',
+  'accepted_at',
+  'publish_date',
+  'published_at',
+  'filed_date',
+  'filing_date',
+] as const;
+
+function toDateOnly(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function extractAvailabilityDate(record: Record<string, unknown>): string | null {
+  for (const key of AVAILABILITY_KEYS) {
+    const parsed = toDateOnly(record[key]);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function annotateAvailability<T extends Record<string, unknown>>(
+  row: T,
+  asOfDate?: string,
+): T | null {
+  if (!asOfDate) return row;
+  const availabilityDate = extractAvailabilityDate(row);
+  if (availabilityDate && availabilityDate > asOfDate) {
+    return null;
+  }
+  if (!availabilityDate) {
+    return {
+      ...row,
+      __pitMissingAvailability: true,
+    };
+  }
+  return row;
 }
 
 function toEpochSeconds(date: string): number {
@@ -127,31 +181,67 @@ export async function fetchHistoricalPrices(
   const isHistoricalWindow = isDateInPast(endDateStr);
   priceFetchStats.paidApiCalls += 1;
   return safeApi(async () => {
-    const { data } = await api.get(
-      '/prices/',
-      {
-        ticker: ticker.toUpperCase(),
-        interval: 'day',
-        start_date: formatDate(startDate),
-        end_date: endDateStr,
-      },
-      { cacheable: true, ttlMs: isHistoricalWindow ? TTL_24H : TTL_1H },
-    );
+    const startDateStr = formatDate(startDate);
+    const parseBars = (rows: Array<Record<string, unknown>>): PriceBar[] =>
+      rows
+        .map((row) => ({
+          // FinancialDatasets can return `time` instead of `date` for price bars.
+          date: String(row.date ?? row.time ?? row.period ?? ''),
+          open: Number(row.open ?? row.price_open ?? 0),
+          high: Number(row.high ?? row.price_high ?? 0),
+          low: Number(row.low ?? row.price_low ?? 0),
+          close: Number(row.close ?? row.price_close ?? row.price ?? 0),
+          adjustedClose: Number(
+            row.adjusted_close ?? row.adj_close ?? row.close ?? row.price_close ?? row.price ?? 0,
+          ),
+          volume: Number(row.volume ?? 0),
+        }))
+        .filter((bar): bar is PriceBar => Boolean(bar.date))
+        .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
 
-    const rawBars = Array.isArray(data.prices) ? data.prices : [];
-    return rawBars
-      .map((row) => ({
-        // FinancialDatasets can return `time` instead of `date` for price bars.
-        date: String(row.date ?? row.time ?? row.period ?? ''),
-        open: Number(row.open ?? row.price_open ?? 0),
-        high: Number(row.high ?? row.price_high ?? 0),
-        low: Number(row.low ?? row.price_low ?? 0),
-        close: Number(row.close ?? row.price_close ?? row.price ?? 0),
-        volume: Number(row.volume ?? 0),
-      }))
-      .filter((bar): bar is PriceBar => Boolean(bar.date))
-      .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+    const callPrices = async (effectiveEndDate: string): Promise<PriceBar[]> => {
+      const { data } = await api.get(
+        '/prices/',
+        {
+          ticker: ticker.toUpperCase(),
+          interval: 'day',
+          start_date: startDateStr,
+          end_date: effectiveEndDate,
+        },
+        { cacheable: true, ttlMs: isHistoricalWindow ? TTL_24H : TTL_1H },
+      );
+      const rawBars = Array.isArray(data.prices)
+        ? (data.prices as Array<Record<string, unknown>>)
+        : [];
+      return parseBars(rawBars);
+    };
+
+    try {
+      return await callPrices(endDateStr);
+    } catch (error) {
+      const retryEndDate = resolveRetryEndDateForInvalidProviderDate(
+        endDateStr,
+        startDateStr,
+        error instanceof Error ? error.message : String(error),
+      );
+      if (!retryEndDate) throw error;
+      return callPrices(retryEndDate);
+    }
   }, [], 'fetchHistoricalPrices');
+}
+
+export function resolveRetryEndDateForInvalidProviderDate(
+  requestedEndDate: string,
+  startDate: string,
+  errorMessage: string,
+): string | null {
+  if (!/Invalid end_date|end_date must be today/i.test(errorMessage)) return null;
+  const providerTodayMatch = errorMessage.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  const candidateFromProvider = providerTodayMatch?.[1] ?? null;
+  const candidate = candidateFromProvider ?? addDays(requestedEndDate, -1);
+  if (candidate >= requestedEndDate) return null;
+  if (candidate < startDate) return null;
+  return candidate;
 }
 
 export async function fetchHistoricalPricesFromYahoo(
@@ -177,6 +267,13 @@ export async function fetchHistoricalPricesFromYahoo(
         high: Number((row as Record<string, unknown>).high ?? 0),
         low: Number((row as Record<string, unknown>).low ?? 0),
         close: Number((row as Record<string, unknown>).close ?? 0),
+        adjustedClose: Number(
+          (row as Record<string, unknown>).adjustedClose ??
+            (row as Record<string, unknown>).adjusted_close ??
+            (row as Record<string, unknown>).adj_close ??
+            (row as Record<string, unknown>).close ??
+            0,
+        ),
         volume: Number((row as Record<string, unknown>).volume ?? 0),
       }))
       .filter(isFinitePriceBar);
@@ -218,6 +315,14 @@ export async function fetchHistoricalPricesFromYahoo(
   const lows = Array.isArray(quote?.low) ? quote?.low : [];
   const closes = Array.isArray(quote?.close) ? quote?.close : [];
   const volumes = Array.isArray(quote?.volume) ? quote?.volume : [];
+  const adj = Array.isArray(
+    ((result?.indicators as Record<string, unknown> | undefined)?.adjclose as
+      | Array<Record<string, unknown>>
+      | undefined)?.[0]?.adjclose,
+  )
+    ? ((((result?.indicators as Record<string, unknown>).adjclose as Array<Record<string, unknown>>)[0]
+        .adjclose as unknown[]) ?? [])
+    : [];
 
   const bars: PriceBar[] = [];
   for (let i = 0; i < timestamps.length; i += 1) {
@@ -228,12 +333,14 @@ export async function fetchHistoricalPricesFromYahoo(
     const high = Number(highs[i]);
     const low = Number(lows[i]);
     const volume = Number(volumes[i]);
+    const adjustedClose = Number(adj[i]);
     bars.push({
       date: fromEpochSeconds(ts),
       open: Number.isFinite(open) ? open : close,
       high: Number.isFinite(high) ? high : close,
       low: Number.isFinite(low) ? low : close,
       close,
+      adjustedClose: Number.isFinite(adjustedClose) ? adjustedClose : close,
       volume: Number.isFinite(volume) ? volume : 0,
     });
   }
@@ -274,7 +381,12 @@ export async function fetchKeyRatios(
       as_of: asOf,
       report_period_lte: asOf,
     }, { cacheable: true, ttlMs: isHistoricalSnapshot ? TTL_24H : TTL_1H });
-    return (data.snapshot as Record<string, unknown>) ?? {};
+    const snapshot = ((data.snapshot as Record<string, unknown>) ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const annotated = annotateAvailability(snapshot, asOf);
+    return annotated ?? {};
   }, {}, 'fetchKeyRatios');
 }
 
@@ -293,7 +405,10 @@ export async function fetchCashFlowStatements(
       report_period_lte: asOf,
       as_of: asOf,
     }, { cacheable: true, ttlMs: isHistoricalSnapshot ? TTL_24H : TTL_1H });
-    return (data.cash_flow_statements as Array<Record<string, unknown>>) ?? [];
+    const rows = (data.cash_flow_statements as Array<Record<string, unknown>>) ?? [];
+    return rows
+      .map((row) => annotateAvailability(row, asOf))
+      .filter((row): row is Record<string, unknown> => Boolean(row));
   }, [], 'fetchCashFlowStatements');
 }
 
@@ -312,7 +427,10 @@ export async function fetchIncomeStatements(
       report_period_lte: asOf,
       as_of: asOf,
     }, { cacheable: true, ttlMs: isHistoricalSnapshot ? TTL_24H : TTL_1H });
-    return (data.income_statements as Array<Record<string, unknown>>) ?? [];
+    const rows = (data.income_statements as Array<Record<string, unknown>>) ?? [];
+    return rows
+      .map((row) => annotateAvailability(row, asOf))
+      .filter((row): row is Record<string, unknown> => Boolean(row));
   }, [], 'fetchIncomeStatements');
 }
 
@@ -320,8 +438,9 @@ export async function fetchCompanyNews(
   ticker: string,
   limit = 5,
   range: MarketDataRange = {},
-): Promise<Array<{ title?: string; url?: string; published_at?: string }>> {
+): Promise<Array<Record<string, unknown>>> {
   const endDate = range.endDate ?? range.asOfDate;
+  const asOf = range.asOfDate ?? range.endDate;
   const isHistoricalWindow = isDateInPast(endDate);
   return safeApi(async () => {
     const { data } = await api.get('/news', {
@@ -330,6 +449,51 @@ export async function fetchCompanyNews(
       end_date: endDate,
       start_date: range.startDate,
     }, { cacheable: true, ttlMs: isHistoricalWindow ? TTL_24H : TTL_15M });
-    return (data.news as Array<Record<string, unknown>>) ?? [];
+    const rows = (data.news as Array<Record<string, unknown>>) ?? [];
+    return rows
+      .map((row) => annotateAvailability(row, asOf))
+      .filter((row): row is Record<string, unknown> => Boolean(row));
   }, [], 'fetchCompanyNews');
+}
+
+function pickUpcomingDateFromRow(row: Record<string, unknown>): string | null {
+  const candidates = [
+    row.earnings_date,
+    row.next_earnings_date,
+    row.date,
+    row.report_date,
+    row.release_date,
+  ];
+  for (const candidate of candidates) {
+    const parsed = toDateOnly(candidate);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+export async function fetchUpcomingEarningsDate(
+  ticker: string,
+  asOfDate?: string,
+): Promise<string | null> {
+  const asOf = asOfDate?.slice(0, 10);
+  const isHistoricalSnapshot = isDateInPast(asOf);
+  return safeApi(async () => {
+    const { data } = await api.get(
+      '/earnings-calendar/',
+      {
+        ticker: ticker.toUpperCase(),
+        limit: 6,
+        date_gte: asOf,
+      },
+      { cacheable: true, ttlMs: isHistoricalSnapshot ? TTL_24H : TTL_1H },
+    );
+    const rows = (data.earnings as Array<Record<string, unknown>>) ?? [];
+    const dates = rows
+      .map((row) => pickUpcomingDateFromRow(row))
+      .filter((value): value is string => Boolean(value))
+      .sort((a, b) => Date.parse(a) - Date.parse(b));
+    if (!dates.length) return null;
+    if (!asOf) return dates[0];
+    return dates.find((date) => date >= asOf) ?? null;
+  }, null, 'fetchUpcomingEarningsDate');
 }

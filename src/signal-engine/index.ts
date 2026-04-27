@@ -2,6 +2,10 @@ import { runFundamentalAnalysis } from '../agents/analysis/fundamentals.js';
 import { runSentimentAnalysis } from '../agents/analysis/sentiment.js';
 import { runTechnicalAnalysis } from '../agents/analysis/technical.js';
 import { runValuationAnalysis } from '../agents/analysis/valuation.js';
+import {
+  fetchHistoricalPrices,
+  fetchUpcomingEarningsDate,
+} from '../data/market.js';
 import { reviewRisk } from '../risk/risk.js';
 import { logger } from '../utils/logger.js';
 import { getWatchlistForTickers } from '../watchlists/watchlists.js';
@@ -12,6 +16,9 @@ import {
 } from './execution.js';
 import { evaluatePortfolioConstraints } from './portfolio-constraints.js';
 import { deriveConfidence, resolveAction } from './rules.js';
+import { normalizeActionForMode } from './action-normalization.js';
+import { applyEarningsPolicy } from './earnings-awareness.js';
+import { evaluateMarketRegime } from './market-regime.js';
 import {
   DataCompleteness,
   ExecutionPlan,
@@ -46,6 +53,14 @@ export interface ScanProviders {
     ticker: string,
     context?: AnalysisContext,
   ) => ReturnType<typeof runValuationAnalysis>;
+  fetchUpcomingEarningsDate?: (
+    ticker: string,
+    context?: AnalysisContext,
+  ) => Promise<string | null>;
+  fetchMarketRegimeInputs?: (
+    context?: AnalysisContext,
+    lookbackDays?: number,
+  ) => Promise<{ spyCloses: number[]; vixClose: number | null }>;
 }
 
 const defaultProviders: ScanProviders = {
@@ -53,7 +68,31 @@ const defaultProviders: ScanProviders = {
   runFundamentalAnalysis,
   runSentimentAnalysis,
   runValuationAnalysis,
+  fetchUpcomingEarningsDate: (ticker, context) =>
+    fetchUpcomingEarningsDate(ticker, context?.asOfDate),
+  fetchMarketRegimeInputs: async (context, lookbackDays = SIGNAL_CONFIG.regime.spySmaLookbackDays) => {
+    const endDate = context?.asOfDate?.slice(0, 10);
+    const volatilityTicker = SIGNAL_CONFIG.regime.volatilityTicker;
+    const spyCalendarWindowDays = regimeSpyCalendarWindowDays(lookbackDays);
+    const [spyBars, vixBars] = await Promise.all([
+      fetchHistoricalPrices('SPY', spyCalendarWindowDays, { endDate }),
+      fetchHistoricalPrices(volatilityTicker, 20, { endDate }),
+    ]);
+    return {
+      spyCloses: spyBars
+        .map((bar) => bar.close)
+        .filter((value) => Number.isFinite(value) && value > 0),
+      vixClose: vixBars.length ? vixBars[vixBars.length - 1].close : null,
+    };
+  },
 };
+
+export function regimeSpyCalendarWindowDays(lookbackDays: number): number {
+  const safeLookback = Math.max(1, Math.floor(lookbackDays));
+  const multiplier = Math.max(1, SIGNAL_CONFIG.regime.spySmaCalendarBufferMultiplier);
+  const extraDays = Math.max(0, Math.floor(SIGNAL_CONFIG.regime.spySmaCalendarBufferExtraDays));
+  return Math.ceil(safeLookback * multiplier) + extraDays;
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -117,7 +156,7 @@ async function runWithRetryAndFallback<T>(
 
 function correlation(a: number[], b: number[]): number | null {
   const n = Math.min(a.length, b.length);
-  if (n < 10) return null;
+  if (n < SIGNAL_CONFIG.risk.correlationMinObservations) return null;
   const xs = a.slice(-n);
   const ys = b.slice(-n);
   const meanX = xs.reduce((sum, v) => sum + v, 0) / n;
@@ -161,16 +200,20 @@ function getPositionContext(
 
 function estimatePriceFromTechnical(
   technical: Awaited<ReturnType<typeof runTechnicalAnalysis>>,
-): number {
+): { price: number; usedFallback: boolean } {
   const latest = technical.bars[technical.bars.length - 1];
-  if (latest && Number.isFinite(latest.close) && latest.close > 0) return latest.close;
-  return SIGNAL_CONFIG.execution.fallbackEstimatedPrice;
+  if (latest && Number.isFinite(latest.rawClose) && latest.rawClose > 0)
+    return { price: latest.rawClose, usedFallback: false };
+  if (latest && Number.isFinite(latest.close) && latest.close > 0)
+    return { price: latest.close, usedFallback: false };
+  return { price: SIGNAL_CONFIG.execution.fallbackEstimatedPrice, usedFallback: true };
 }
 
 function buildPositionPerformance(
   markPrice: number,
   position: PositionContext,
   positionState: PositionStateInput | undefined,
+  usedFallbackMarkPrice = false,
 ): PositionPerformance {
   const hasOpenPosition = position.longShares > 0 || position.shortShares > 0;
   const isCostBasisAvailable = Boolean(positionState);
@@ -220,6 +263,26 @@ function buildPositionPerformance(
       realizedPnlUsd: null,
       totalPnlUsd: null,
       notes: ['Missing cost basis in stored position ledger'],
+    };
+  }
+
+  if (usedFallbackMarkPrice && hasOpenPosition) {
+    return {
+      hasOpenPosition,
+      isCostBasisAvailable,
+      markPrice: roundTo(markPrice, 2),
+      longShares: position.longShares,
+      shortShares: position.shortShares,
+      longCostBasis: longCostBasis === null ? null : roundTo(longCostBasis, 4),
+      shortCostBasis: shortCostBasis === null ? null : roundTo(shortCostBasis, 4),
+      longMarketValueUsd: roundTo(longMarketValueUsd, 2),
+      shortMarketValueUsd: roundTo(shortMarketValueUsd, 2),
+      netExposureUsd: roundTo(netExposureUsd, 2),
+      unrealizedPnlUsd: null,
+      unrealizedPnlPct: null,
+      realizedPnlUsd: roundTo(positionState.realizedPnlUsd, 2),
+      totalPnlUsd: null,
+      notes: ['Mark price unavailable; fallback price used, unrealized/total PnL suppressed'],
     };
   }
 
@@ -407,8 +470,21 @@ function evaluateDataCompleteness(
     `Valuation methods with valid value: ${valuationMethodCount}`,
     `Sentiment signal count: ${sentimentSignals}`,
   ];
+  if (fundamental.pitAvailabilityMissing)
+    notes.push('Fundamentals missing explicit PIT availability timestamp');
+  if (valuation.pitAvailabilityMissing)
+    notes.push('Valuation inputs missing explicit PIT availability timestamp');
+  if (sentiment.pitAvailabilityMissing)
+    notes.push('Sentiment inputs missing explicit PIT availability timestamp');
   const status: DataCompleteness['status'] =
-    missingCritical.length > 0 ? 'fail' : score < 0.8 ? 'warn' : 'pass';
+    missingCritical.length > 0
+      ? 'fail'
+      : fundamental.pitAvailabilityMissing ||
+          valuation.pitAvailabilityMissing ||
+          sentiment.pitAvailabilityMissing ||
+          score < 0.8
+        ? 'warn'
+        : 'pass';
 
   return {
     score,
@@ -428,10 +504,15 @@ export async function runDailyScan(
   const interim: InterimAnalysis[] = [];
 
   for (const entry of watchlist) {
+    const analysisContextForTicker: AnalysisContext = {
+      ...(options.analysisContext ?? {}),
+      companyName: entry.name,
+      sector: entry.sector,
+    };
     const [technicalResult, fundamentalResult, sentimentResult, valuationResult] =
       await Promise.all([
         runWithRetryAndFallback(
-        () => providers.runTechnicalAnalysis(entry.ticker, options.analysisContext),
+        () => providers.runTechnicalAnalysis(entry.ticker, analysisContextForTicker),
         {
           ticker: entry.ticker,
           score: 0,
@@ -446,25 +527,28 @@ export async function runDailyScan(
             meanReversion: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
             momentum: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
             volatility: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
-            statArb: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
+            macd: { signal: 'neutral' as const, confidence: 0.5, score: 0, metrics: {} },
           },
         },
         'technical',
         'Retry in 5-10 minutes. If still failing, validate historical price endpoint and symbol format.',
       ),
         runWithRetryAndFallback(
-        () => providers.runFundamentalAnalysis(entry.ticker, options.analysisContext),
+        () => providers.runFundamentalAnalysis(entry.ticker, analysisContextForTicker),
         {
           ticker: entry.ticker,
           score: 0,
           confidence: 0,
           signal: 'neutral' as const,
+          pitAvailabilityMissing: false,
           metrics: {},
           summary: 'Fundamental data unavailable',
           pillars: {
             profitability: { signal: 'neutral' as const, score: 0, details: '' },
             growth: { signal: 'neutral' as const, score: 0, details: '' },
             health: { signal: 'neutral' as const, score: 0, details: '' },
+            cashFlowQuality: { signal: 'neutral' as const, score: 0, details: '' },
+            capitalEfficiency: { signal: 'neutral' as const, score: 0, details: '' },
             valuationRatios: { signal: 'neutral' as const, score: 0, details: '' },
           },
         },
@@ -472,26 +556,40 @@ export async function runDailyScan(
         'Retry after data provider refresh; verify financial-metrics snapshot availability for the ticker.',
       ),
         runWithRetryAndFallback(
-        () => providers.runSentimentAnalysis(entry.ticker, options.analysisContext),
+        () => providers.runSentimentAnalysis(entry.ticker, analysisContextForTicker),
         {
           ticker: entry.ticker,
           score: 0,
           summary: 'Sentiment data unavailable',
           positive: 0,
           negative: 0,
+          provider: 'neutral_fallback' as const,
+          articleCount: 0,
+          usedArticleCount: 0,
+          ignoredArticleCount: 0,
+          pitAvailabilityMissing: false,
+          evidence: [],
         },
         'sentiment',
         'Retry after 15 minutes; if still empty, treat sentiment as low-priority and use other components.',
       ),
         runWithRetryAndFallback(
-        () => providers.runValuationAnalysis(entry.ticker, options.analysisContext),
+        () => providers.runValuationAnalysis(entry.ticker, analysisContextForTicker),
         {
           ticker: entry.ticker,
           score: 0,
           confidence: 0,
           signal: 'neutral' as const,
+          pitAvailabilityMissing: false,
           marketCap: 0,
           weightedGap: 0,
+          context: {
+            sector: 'Unknown',
+            fairPeBase: SIGNAL_CONFIG.valuation.fairPe,
+            fairPeAdjusted: SIGNAL_CONFIG.valuation.fairPe,
+            pegGrowthUsed: null,
+            role: 'context_modifier' as const,
+          },
           methods: {
             dcf: { value: 0, gap: 0, signal: 'neutral' as const, details: 'Unavailable' },
             ownerEarnings: { value: 0, gap: 0, signal: 'neutral' as const, details: 'Unavailable' },
@@ -516,6 +614,42 @@ export async function runDailyScan(
       valuationResult.event,
       ...detectDataFallbacks(entry.ticker, technical, fundamental, valuation),
     ];
+    if (fundamental.pitAvailabilityMissing) {
+      fallbackEvents.push({
+        component: 'fundamental_pit',
+        fallbackUsed: true,
+        reason:
+          'Fundamentals missing explicit availability timestamp; applied conservative confidence penalty.',
+        retrySuggestion:
+          'Retry with provider fields that include publish/accepted/available timestamps.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
+    if (valuation.pitAvailabilityMissing) {
+      fallbackEvents.push({
+        component: 'valuation_pit',
+        fallbackUsed: true,
+        reason:
+          'Valuation inputs missing explicit availability timestamp; applied conservative confidence penalty.',
+        retrySuggestion:
+          'Retry with provider fields that include publish/accepted/available timestamps.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
+    if (sentiment.pitAvailabilityMissing) {
+      fallbackEvents.push({
+        component: 'sentiment_pit',
+        fallbackUsed: true,
+        reason:
+          'News items missing explicit availability timestamp; applied conservative sentiment penalty.',
+        retrySuggestion:
+          'Retry with provider fields that include publish/accepted/available timestamps.',
+        attempts: 0,
+        lastError: null,
+      });
+    }
 
     interim.push({
       ticker: entry.ticker,
@@ -530,6 +664,22 @@ export async function runDailyScan(
   const returnsByTicker = Object.fromEntries(
     interim.map((item) => [item.ticker, item.technical.returns]),
   );
+  const regimeInputs = await (providers.fetchMarketRegimeInputs
+    ? providers.fetchMarketRegimeInputs(
+        options.analysisContext,
+        options.regimeConfig?.spySmaLookbackDays,
+      )
+    : defaultProviders.fetchMarketRegimeInputs!(
+        options.analysisContext,
+        options.regimeConfig?.spySmaLookbackDays,
+      ));
+  const regimePolicy = evaluateMarketRegime({
+    asOfDate:
+      options.analysisContext?.asOfDate?.slice(0, 10) ?? generatedAt.slice(0, 10),
+    spyCloses: regimeInputs.spyCloses,
+    vixClose: regimeInputs.vixClose,
+    config: options.regimeConfig,
+  });
 
   const alerts: SignalPayload[] = [];
   for (const item of interim) {
@@ -579,41 +729,100 @@ export async function runDailyScan(
       1,
     );
     const positionContext = getPositionContext(item.ticker, options.positions);
-    const action = resolveAction(aggregateScore, risk, positionContext);
-    const baseConfidence = deriveConfidence(aggregateScore, risk);
+    const rawAction = resolveAction(aggregateScore, risk, positionContext);
+    const normalizedInitialAction = normalizeActionForMode(
+      rawAction,
+      'long_only',
+      positionContext,
+    );
+    const action = normalizedInitialAction.canonicalAction;
+    let policyAction = action;
+    const confidenceBreakdown = deriveConfidence({
+      aggregateScore,
+      risk,
+      components: [
+        { name: 'technical', score: item.technical.score },
+        { name: 'fundamentals', score: item.fundamental.score },
+        { name: 'valuation', score: item.valuation.score },
+        { name: 'sentiment', score: item.sentiment.score },
+      ],
+      dataCompletenessScore: dataCompleteness.score,
+      fallbackRatio,
+      pitAvailabilityMissingCount: [
+        item.fundamental.pitAvailabilityMissing,
+        item.valuation.pitAvailabilityMissing,
+        item.sentiment.pitAvailabilityMissing,
+      ].filter(Boolean).length,
+    });
+    const baseConfidence = confidenceBreakdown.confidence;
     const confidence = isDegradedDataMode
       ? roundTo(baseConfidence * SIGNAL_CONFIG.confidence.degradedDataPenalty, 4)
       : baseConfidence;
-    const estimatedPrice = estimatePriceFromTechnical(item.technical);
+    if (policyAction === 'BUY') {
+      const buyThresholdWithRegime =
+        SIGNAL_CONFIG.actions.buyScoreThreshold +
+        regimePolicy.assessment.policyAdjustmentsApplied.buyThresholdAdd;
+      if (aggregateScore < buyThresholdWithRegime) {
+        policyAction = 'HOLD';
+      }
+      if (regimePolicy.assessment.policyAdjustmentsApplied.strictBuyGate) {
+        policyAction = 'HOLD';
+      }
+    }
+    const earningsResult = applyEarningsPolicy({
+      action: policyAction,
+      asOfDate: options.analysisContext?.asOfDate ?? generatedAt,
+      nextEarningsDate: await (providers.fetchUpcomingEarningsDate
+        ? providers.fetchUpcomingEarningsDate(item.ticker, options.analysisContext)
+        : defaultProviders.fetchUpcomingEarningsDate!(item.ticker, options.analysisContext)),
+      config: options.earningsConfig,
+    });
+    policyAction = earningsResult.action;
+    const confidenceCap = regimePolicy.assessment.policyAdjustmentsApplied.confidenceCap;
+    const cappedConfidence =
+      confidenceCap === null ? confidence : Math.min(confidence, confidenceCap);
+    const allocationMultiplier =
+      regimePolicy.assessment.policyAdjustmentsApplied.maxAllocationMultiplier;
+    const effectiveRisk = {
+      ...risk,
+      maxAllocation: clamp(
+        risk.maxAllocation * allocationMultiplier,
+        SIGNAL_CONFIG.risk.maxAllocationMin,
+        SIGNAL_CONFIG.risk.maxAllocationMax,
+      ),
+    };
+    const estimatedPriceMeta = estimatePriceFromTechnical(item.technical);
+    const estimatedPrice = estimatedPriceMeta.price;
     const targetNotional = estimateTargetNotionalUsd(
-      action,
-      risk,
+      policyAction,
+      effectiveRisk,
       portfolioValue,
-      confidence,
+      cappedConfidence,
       positionContext,
     );
     let estimatedShares = Math.floor(targetNotional / estimatedPrice);
-    if (action === 'SELL') estimatedShares = positionContext.longShares;
-    if (action === 'COVER') estimatedShares = positionContext.shortShares;
+    if (policyAction === 'SELL') estimatedShares = positionContext.longShares;
     const notionalUsd = estimatedShares * estimatedPrice;
     const costEstimate = estimateExecutionCosts({
-      action,
+      action: policyAction,
       watchlist: entry,
       position: positionContext,
-      confidence,
+      confidence: cappedConfidence,
       aggregateScore,
       notionalUsd,
       config: options.executionConfig,
     });
     const constraints = evaluatePortfolioConstraints({
-      action,
+      action: policyAction,
       watchlist: entry,
       notionalUsd,
       portfolioValue,
       options,
     });
+    const costChangedAction =
+      policyAction !== 'HOLD' && estimatedShares > 0 && !costEstimate.isTradeableAfterCosts;
     const shouldDowngradeToHold =
-      action !== 'HOLD' &&
+      policyAction !== 'HOLD' &&
       estimatedShares > 0 &&
       (!costEstimate.isTradeableAfterCosts || !constraints.isAllowed);
     const regionalMarketCheck: RegionalMarketCheck = evaluateRegionalMarketCheck(
@@ -621,7 +830,7 @@ export async function runDailyScan(
       item.technical,
     );
     const shouldDowngradeForRegionalChecks =
-      action !== 'HOLD' && estimatedShares > 0 && !regionalMarketCheck.isTradeableInRegion;
+      policyAction !== 'HOLD' && estimatedShares > 0 && !regionalMarketCheck.isTradeableInRegion;
     const suppressedByQualityGuard =
       fallbackRatio >= SIGNAL_CONFIG.quality.noSignalFallbackRatio;
     const suppressedByDataGap =
@@ -648,18 +857,24 @@ export async function runDailyScan(
         lastError: null,
       });
     }
-    const finalAction =
+    const rawFinalAction =
       suppressedByQualityGuard ||
       suppressedByDataGap ||
       shouldDowngradeToHold ||
       shouldDowngradeForRegionalChecks
         ? 'HOLD'
-        : action;
+        : policyAction;
+    const normalizedFinalAction = normalizeActionForMode(
+      rawFinalAction,
+      'long_only',
+      positionContext,
+    );
+    const finalAction = normalizedFinalAction.canonicalAction;
     const delta = buildSignalDelta(
       options.previousSignalsByTicker?.[item.ticker],
       action,
       finalAction,
-      confidence,
+      cappedConfidence,
       aggregateScore,
       weightedInputs,
     );
@@ -667,13 +882,14 @@ export async function runDailyScan(
       estimatedPrice,
       estimatedShares,
       notionalUsd,
-      costEstimate,
+      costEstimate: { ...costEstimate, costChangedAction },
       constraints,
     };
     const positionPerformance = buildPositionPerformance(
       estimatedPrice,
       positionContext,
       options.positionStatesByTicker?.[item.ticker],
+      estimatedPriceMeta.usedFallback,
     );
 
     const components: SignalComponent[] = [
@@ -692,6 +908,7 @@ export async function runDailyScan(
         details: {
           signal: item.fundamental.signal,
           summary: item.fundamental.summary,
+          pitAvailabilityMissing: item.fundamental.pitAvailabilityMissing,
           pillars: item.fundamental.pillars,
           metrics: item.fundamental.metrics,
         },
@@ -702,6 +919,8 @@ export async function runDailyScan(
         details: {
           signal: item.valuation.signal,
           summary: item.valuation.summary,
+          pitAvailabilityMissing: item.valuation.pitAvailabilityMissing,
+          context: item.valuation.context,
           weightedGap: item.valuation.weightedGap,
           methods: item.valuation.methods,
         },
@@ -711,17 +930,42 @@ export async function runDailyScan(
         score: item.sentiment.score,
         details: {
           summary: item.sentiment.summary,
+          pitAvailabilityMissing: item.sentiment.pitAvailabilityMissing,
+          provider: item.sentiment.provider,
+          articleCount: item.sentiment.articleCount,
+          usedArticleCount: item.sentiment.usedArticleCount,
+          ignoredArticleCount: item.sentiment.ignoredArticleCount,
           positive: item.sentiment.positive,
           negative: item.sentiment.negative,
+          evidence: item.sentiment.evidence,
         },
       },
     ];
 
     const payload: SignalPayload = {
       ticker: item.ticker,
-      action: suppressedByQualityGuard || suppressedByDataGap ? 'HOLD' : action,
-      confidence: suppressedByQualityGuard || suppressedByDataGap ? 0 : confidence,
+      action:
+        suppressedByQualityGuard || suppressedByDataGap
+          ? 'HOLD'
+          : normalizedInitialAction.canonicalAction,
+      confidence: suppressedByQualityGuard || suppressedByDataGap ? 0 : cappedConfidence,
+      confidenceMetadata: {
+        agreement: roundTo(confidenceBreakdown.agreement, 4),
+        evidenceBreadth: roundTo(confidenceBreakdown.evidenceBreadth, 4),
+        dataQuality: roundTo(confidenceBreakdown.dataQuality, 4),
+        riskSupport: roundTo(confidenceBreakdown.riskSupport, 4),
+        divergence: roundTo(confidenceBreakdown.divergence, 4),
+        direction: confidenceBreakdown.direction,
+      },
       finalAction,
+      rawAction,
+      rawFinalAction,
+      actionNormalizationNote:
+        normalizedInitialAction.note || normalizedFinalAction.note
+          ? [normalizedInitialAction.note, normalizedFinalAction.note]
+              .filter(Boolean)
+              .join(' | ')
+          : null,
       qualityGuard: {
         suppressed: suppressedByQualityGuard || suppressedByDataGap,
         reason: suppressedByDataGap
@@ -731,6 +975,8 @@ export async function runDailyScan(
             : null,
         fallbackRatio: roundTo(fallbackRatio, 4),
       },
+      earningsRisk: earningsResult.assessment,
+      marketRegime: regimePolicy.assessment,
       dataCompleteness,
       delta,
       regionalMarketCheck,
@@ -743,7 +989,7 @@ export async function runDailyScan(
       },
       reasoning: {
         components,
-        risk,
+        risk: effectiveRisk,
         aggregateScore,
         weightedInputs,
       },

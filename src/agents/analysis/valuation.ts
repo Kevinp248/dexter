@@ -18,8 +18,16 @@ export interface ValuationSignal {
   score: number;
   confidence: number;
   signal: 'bullish' | 'bearish' | 'neutral';
+  pitAvailabilityMissing: boolean;
   marketCap: number;
   weightedGap: number;
+  context: {
+    sector: string;
+    fairPeBase: number;
+    fairPeAdjusted: number;
+    pegGrowthUsed: number | null;
+    role: 'context_modifier';
+  };
   methods: {
     dcf: MethodResult;
     ownerEarnings: MethodResult;
@@ -91,6 +99,57 @@ function asMethod(value: number, marketCap: number, label: string): MethodResult
   };
 }
 
+function normalizeSector(raw?: string): string {
+  if (!raw || typeof raw !== 'string') return 'Unknown';
+  const normalized = raw.trim();
+  if (!normalized) return 'Unknown';
+  const entries = Object.keys(SIGNAL_CONFIG.valuation.sectorFairPe);
+  const match = entries.find(
+    (candidate) => candidate.toLowerCase() === normalized.toLowerCase(),
+  );
+  return match ?? 'Unknown';
+}
+
+function resolveFairPeAssumption(
+  sector: string,
+  growthInput?: number,
+): {
+  fairPeBase: number;
+  fairPeAdjusted: number;
+  pegGrowthUsed: number | null;
+} {
+  const assumption =
+    SIGNAL_CONFIG.valuation.sectorFairPe[sector] ??
+    SIGNAL_CONFIG.valuation.sectorFairPe.Unknown;
+  const boundedGrowth =
+    growthInput === undefined || !Number.isFinite(growthInput)
+      ? null
+      : clamp(
+          growthInput,
+          SIGNAL_CONFIG.valuation.pegGrowthMin,
+          SIGNAL_CONFIG.valuation.pegGrowthMax,
+        );
+
+  if (boundedGrowth === null) {
+    return {
+      fairPeBase: assumption.baseFairPe,
+      fairPeAdjusted: assumption.baseFairPe,
+      pegGrowthUsed: null,
+    };
+  }
+
+  const fairPeAdjusted = clamp(
+    assumption.baseFairPe + boundedGrowth * assumption.pegSensitivity,
+    assumption.minFairPe,
+    assumption.maxFairPe,
+  );
+  return {
+    fairPeBase: assumption.baseFairPe,
+    fairPeAdjusted,
+    pegGrowthUsed: boundedGrowth,
+  };
+}
+
 export async function runValuationAnalysis(
   ticker: string,
   context: AnalysisContext = {},
@@ -101,12 +160,21 @@ export async function runValuationAnalysis(
     fetchCashFlowStatements(ticker, 8, range),
     fetchIncomeStatements(ticker, 8, range),
   ]);
+  const pitAvailabilityMissing =
+    Boolean((ratios as Record<string, unknown>).__pitMissingAvailability) ||
+    cashFlows.some((row) => Boolean((row as Record<string, unknown>).__pitMissingAvailability)) ||
+    incomeStatements.some((row) =>
+      Boolean((row as Record<string, unknown>).__pitMissingAvailability),
+    );
 
   const marketCap = asNumber(ratios.market_cap) ?? 0;
   const earningsGrowth = asNumber(ratios.earnings_growth) ?? 0.05;
   const pbRatio = asNumber(ratios.price_to_book_ratio) ?? 3;
   const roe = asNumber(ratios.return_on_equity) ?? 0.1;
   const peRatio = asNumber(ratios.pe_ratio) ?? 20;
+  const sector = normalizeSector(
+    (context as Record<string, unknown>).sector as string | undefined,
+  );
 
   const fcfHistory = cashFlows
     .map((row) => asNumber(row.free_cash_flow))
@@ -142,7 +210,8 @@ export async function runValuationAnalysis(
     'Owner earnings',
   );
 
-  const fairPe = SIGNAL_CONFIG.valuation.fairPe;
+  const fairPeContext = resolveFairPeAssumption(sector, earningsGrowth);
+  const fairPe = fairPeContext.fairPeAdjusted;
   const multiplesValue = marketCap > 0 && peRatio > 0 ? marketCap * (fairPe / peRatio) : 0;
   const multiples = asMethod(multiplesValue, marketCap, 'Relative multiple');
 
@@ -161,7 +230,7 @@ export async function runValuationAnalysis(
     Math.abs(weightedGap) / SIGNAL_CONFIG.valuation.scoreScale,
     0,
     1,
-  );
+  ) * (pitAvailabilityMissing ? 0.85 : 1);
   const signal: ValuationSignal['signal'] =
     weightedGap > SIGNAL_CONFIG.valuation.gapSignalThreshold
       ? 'bullish'
@@ -169,19 +238,32 @@ export async function runValuationAnalysis(
         ? 'bearish'
         : 'neutral';
 
+  const posture =
+    weightedGap >= 0.1 ? 'supportive' : weightedGap <= -0.1 ? 'blocker' : 'neutral';
+
   return {
     ticker,
     score,
     confidence,
     signal,
+    pitAvailabilityMissing,
     marketCap,
     weightedGap,
+    context: {
+      sector,
+      fairPeBase: fairPeContext.fairPeBase,
+      fairPeAdjusted: fairPeContext.fairPeAdjusted,
+      pegGrowthUsed: fairPeContext.pegGrowthUsed,
+      role: 'context_modifier',
+    },
     methods: {
       dcf,
       ownerEarnings,
       multiples,
       residualIncome,
     },
-    summary: `${signal.toUpperCase()} valuation | weighted gap ${(weightedGap * 100).toFixed(1)}%`,
+    summary: pitAvailabilityMissing
+      ? `${signal.toUpperCase()} valuation (${posture}) | weighted gap ${(weightedGap * 100).toFixed(1)}% | fair P/E ${fairPe.toFixed(1)} (${sector}) | PIT availability incomplete`
+      : `${signal.toUpperCase()} valuation (${posture}) | weighted gap ${(weightedGap * 100).toFixed(1)}% | fair P/E ${fairPe.toFixed(1)} (${sector})`,
   };
 }

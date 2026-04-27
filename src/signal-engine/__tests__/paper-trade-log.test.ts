@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { appendScanAlertsToPaperTradeLog } from '../paper-trade-log.js';
@@ -10,6 +10,34 @@ function makeAlert(overrides: Partial<SignalPayload> = {}): SignalPayload {
     action: 'HOLD',
     confidence: 29.05,
     finalAction: 'HOLD',
+    rawAction: 'HOLD',
+    rawFinalAction: 'HOLD',
+    actionNormalizationNote: null,
+    earningsRisk: {
+      nextEarningsDate: null,
+      tradingDaysToEarnings: null,
+      coverageStatus: 'missing',
+      inBlackoutWindow: false,
+      policyApplied: 'warn_only',
+      reasonCode: 'EARNINGS_COVERAGE_WARN',
+    },
+    marketRegime: {
+      state: 'regime_unknown',
+      reasonCode: 'REGIME_UNKNOWN_MISSING_SPY',
+      inputs: {
+        asOfDate: '2026-04-09',
+        spyClose: null,
+        spySma: null,
+        vixClose: null,
+        lookbackDays: 200,
+      },
+      policyAdjustmentsApplied: {
+        buyThresholdAdd: 0,
+        confidenceCap: 60,
+        maxAllocationMultiplier: 0.6,
+        strictBuyGate: false,
+      },
+    },
     dataCompleteness: {
       score: 0.92,
       status: 'pass',
@@ -57,12 +85,27 @@ function makeAlert(overrides: Partial<SignalPayload> = {}): SignalPayload {
       estimatedShares: 0,
       notionalUsd: 0,
       costEstimate: {
+        expectedEdgePreCostBps: 42.11,
         oneWayCostBps: 13,
         roundTripCostBps: 26,
+        costBreakdownBps: {
+          spread: 5,
+          slippage: 7,
+          fee: 1,
+          borrow: 0,
+          oneWay: 13,
+          roundTrip: 26,
+        },
         estimatedRoundTripCostUsd: 0,
         expectedEdgeBps: 42.11,
+        expectedEdgePostCostBps: 16.11,
         expectedEdgeAfterCostsBps: 16.11,
+        minEdgeThresholdBps: 0,
         isTradeableAfterCosts: true,
+        costChangedAction: false,
+        assumptionSource: 'default',
+        assumptionVersion: 'execution-defaults-v1',
+        assumptionSnapshotId: 'execution-defaults-v1|cm=1.0000|minEdge=0.00|hold=5',
       },
       constraints: {
         isAllowed: true,
@@ -150,8 +193,39 @@ describe('paper trade CSV append', () => {
     const content = await readFile(csvPath, 'utf8');
     const lines = content.trim().split(/\r?\n/);
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toContain('Date,Ticker,action,finalAction,Confidence');
-    expect(lines[1]).toContain('AAPL,HOLD,HOLD,29.05,skip');
-    expect(lines[2]).toContain('MSFT,HOLD,HOLD,29.05,skip');
+    expect(lines[0]).toContain('Date,Ticker,signalRawAction,action,finalAction,Confidence');
+    expect(lines[1]).toContain('AAPL,HOLD,HOLD,HOLD,29.05,skip');
+    expect(lines[2]).toContain('MSFT,HOLD,HOLD,HOLD,29.05,skip');
+  });
+
+  test('rotates legacy header and writes fresh schema header before append', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'dexter-paper-log-'));
+    const csvPath = path.join(dir, 'paper-trade-log.csv');
+    await writeFile(
+      csvPath,
+      [
+        'Date,Ticker,action,finalAction,Confidence,Decision,Direction',
+        '2026-04-08,AAPL,HOLD,HOLD,20,skip,none',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const result = await appendScanAlertsToPaperTradeLog(
+      {
+        generatedAt: '2026-04-09T18:40:44.324Z',
+        alerts: [makeAlert()],
+      },
+      csvPath,
+    );
+    expect(result.rowsAppended).toBe(1);
+
+    const files = await readdir(dir);
+    const rotated = files.find((file) => file.startsWith('paper-trade-log.csv.migrated-'));
+    expect(rotated).toBeTruthy();
+
+    const content = await readFile(csvPath, 'utf8');
+    const lines = content.trim().split(/\r?\n/);
+    expect(lines[0]).toContain('Date,Ticker,signalRawAction,action,finalAction,Confidence');
+    expect(lines[1]).toContain('AAPL,HOLD,HOLD,HOLD,29.05,skip');
   });
 });

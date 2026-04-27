@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { normalizeActionForMode } from './action-normalization.js';
 
 export interface PaperTradeRow {
   date: string;
@@ -226,6 +227,27 @@ export function parsePaperTradeCsv(content: string): PaperTradeRow[] {
 
     const action = pickValue(raw, ['action', 'signalaction', 'signalrawaction']);
     const finalAction = pickValue(raw, ['finalaction', 'signalfinalaction']);
+    const inferredPosition = {
+      longShares:
+        action.trim().toUpperCase() === 'SELL' ||
+        finalAction.trim().toUpperCase() === 'SELL'
+          ? 1
+          : 0,
+      shortShares:
+        action.trim().toUpperCase() === 'COVER' ||
+        finalAction.trim().toUpperCase() === 'COVER'
+          ? 1
+          : 0,
+    };
+    const normalizedAction = normalizeActionForMode(action, 'long_only', {
+      longShares: inferredPosition.longShares,
+      shortShares: inferredPosition.shortShares,
+    });
+    const normalizedFinalAction = normalizeActionForMode(
+      finalAction || action,
+      'long_only',
+      inferredPosition,
+    );
     const confidence = parseNumber(
       pickValue(raw, ['confidence', 'signalconfidence']),
     );
@@ -245,8 +267,8 @@ export function parsePaperTradeCsv(content: string): PaperTradeRow[] {
     rows.push({
       date,
       ticker,
-      action,
-      finalAction,
+      action: normalizedAction.canonicalAction,
+      finalAction: normalizedFinalAction.canonicalAction,
       confidence,
       decision,
       direction,

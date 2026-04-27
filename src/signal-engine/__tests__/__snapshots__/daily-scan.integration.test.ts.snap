@@ -5,17 +5,26 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
   "alerts": [
     {
       "action": "HOLD",
-      "confidence": 41.75,
+      "actionNormalizationNote": null,
+      "confidence": 83.33688103937537,
+      "confidenceMetadata": {
+        "agreement": 1,
+        "dataQuality": 0.8125,
+        "direction": "bullish",
+        "divergence": 0.1118,
+        "evidenceBreadth": 1,
+        "riskSupport": 0.525,
+      },
       "dataCompleteness": {
         "missingCritical": [],
         "notes": [
-          "Technical bars: 30",
-          "Fundamental metrics present: 2",
+          "Technical bars: 120",
+          "Fundamental metrics present: 3",
           "Valuation methods with valid value: 4",
           "Sentiment signal count: 4",
         ],
-        "score": 0.5125,
-        "status": "warn",
+        "score": 0.8125,
+        "status": "pass",
       },
       "delta": {
         "actionChanged": false,
@@ -29,6 +38,14 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
         ],
         "weightedInputChanges": {},
       },
+      "earningsRisk": {
+        "coverageStatus": "covered",
+        "inBlackoutWindow": false,
+        "nextEarningsDate": "2026-02-15",
+        "policyApplied": "none",
+        "reasonCode": "EARNINGS_COVERAGE_OK",
+        "tradingDaysToEarnings": 30,
+      },
       "executionPlan": {
         "constraints": {
           "blockedReasons": [],
@@ -37,10 +54,25 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
           "projectedSectorExposurePct": 0.15,
         },
         "costEstimate": {
+          "assumptionSnapshotId": "execution-defaults-v1|cm=1.0000|minEdge=0.00|hold=5",
+          "assumptionSource": "default",
+          "assumptionVersion": "execution-defaults-v1",
+          "costBreakdownBps": {
+            "borrow": 0,
+            "fee": 1.5,
+            "oneWay": 18.5,
+            "roundTrip": 37,
+            "slippage": 10,
+            "spread": 7,
+          },
+          "costChangedAction": false,
           "estimatedRoundTripCostUsd": 0,
-          "expectedEdgeAfterCostsBps": 56.8,
-          "expectedEdgeBps": 93.8,
+          "expectedEdgeAfterCostsBps": 81.25212862362523,
+          "expectedEdgeBps": 118.25212862362523,
+          "expectedEdgePostCostBps": 81.25212862362523,
+          "expectedEdgePreCostBps": 118.25212862362523,
           "isTradeableAfterCosts": true,
+          "minEdgeThresholdBps": 0,
           "oneWayCostBps": 18.5,
           "roundTripCostBps": 37,
         },
@@ -87,6 +119,23 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
       },
       "finalAction": "HOLD",
       "generatedAt": "2026-01-02T00:00:00.000Z",
+      "marketRegime": {
+        "inputs": {
+          "asOfDate": "2026-01-02",
+          "lookbackDays": 200,
+          "spyClose": 493.8,
+          "spySma": 473.9,
+          "vixClose": 18,
+        },
+        "policyAdjustmentsApplied": {
+          "buyThresholdAdd": 0,
+          "confidenceCap": null,
+          "maxAllocationMultiplier": 1,
+          "strictBuyGate": false,
+        },
+        "reasonCode": "REGIME_RISK_ON",
+        "state": "risk_on",
+      },
       "positionContext": {
         "longShares": 0,
         "shortShares": 0,
@@ -115,13 +164,21 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
         "reason": null,
         "suppressed": false,
       },
+      "rawAction": "HOLD",
+      "rawFinalAction": "HOLD",
       "reasoning": {
-        "aggregateScore": 0.275,
+        "aggregateScore": 0.273,
         "components": [
           {
             "details": {
               "signal": "bullish",
               "subSignals": {
+                "macd": {
+                  "confidence": 0.5,
+                  "metrics": {},
+                  "score": 0,
+                  "signal": "neutral",
+                },
                 "meanReversion": {
                   "confidence": 0.5,
                   "metrics": {},
@@ -129,12 +186,6 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
                   "signal": "neutral",
                 },
                 "momentum": {
-                  "confidence": 0.5,
-                  "metrics": {},
-                  "score": 0,
-                  "signal": "neutral",
-                },
-                "statArb": {
                   "confidence": 0.5,
                   "metrics": {},
                   "score": 0,
@@ -163,8 +214,19 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
               "metrics": {
                 "debtToEquity": 0.4,
                 "peRatio": 20,
+                "roic": 0.11,
               },
               "pillars": {
+                "capitalEfficiency": {
+                  "details": "mock",
+                  "score": 0,
+                  "signal": "neutral",
+                },
+                "cashFlowQuality": {
+                  "details": "mock",
+                  "score": 0,
+                  "signal": "neutral",
+                },
                 "growth": {
                   "details": "mock",
                   "score": 0,
@@ -186,6 +248,7 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
                   "signal": "neutral",
                 },
               },
+              "pitAvailabilityMissing": false,
               "signal": "bullish",
               "summary": "Mock fundamentals",
             },
@@ -194,6 +257,13 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
           },
           {
             "details": {
+              "context": {
+                "fairPeAdjusted": 22,
+                "fairPeBase": 20,
+                "pegGrowthUsed": 0.05,
+                "role": "context_modifier",
+                "sector": "Technology",
+              },
               "methods": {
                 "dcf": {
                   "details": "mock",
@@ -220,6 +290,7 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
                   "value": 100,
                 },
               },
+              "pitAvailabilityMissing": false,
               "signal": "bullish",
               "summary": "Mock valuation",
               "weightedGap": 0.09,
@@ -229,9 +300,15 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
           },
           {
             "details": {
+              "articleCount": 4,
+              "evidence": [],
+              "ignoredArticleCount": 0,
               "negative": 1,
+              "pitAvailabilityMissing": false,
               "positive": 3,
+              "provider": "structured_news",
               "summary": "Mock sentiment",
+              "usedArticleCount": 4,
             },
             "name": "Sentiment",
             "score": 0.1,
@@ -241,18 +318,20 @@ exports[`runDailyScan deterministic integration snapshot: full output shape rema
           "annualizedVolatility": 0.2,
           "averageCorrelation": null,
           "basePositionLimitPct": 0.195,
-          "checks": [],
-          "combinedLimitPct": 0.195,
-          "correlationMultiplier": 1,
-          "maxAllocation": 0.195,
-          "riskScore": 0.75,
+          "checks": [
+            "Correlation unavailable; conservative diversification cap applied",
+          ],
+          "combinedLimitPct": 0.13649999999999998,
+          "correlationMultiplier": 0.7,
+          "maxAllocation": 0.13649999999999998,
+          "riskScore": 0.5249999999999999,
           "ticker": "SHOP",
         },
         "weightedInputs": {
-          "fundamentals": 0.05,
-          "sentiment": 0.015,
-          "technical": 0.12,
-          "valuation": 0.09,
+          "fundamentals": 0.057999999999999996,
+          "sentiment": 0.017,
+          "technical": 0.144,
+          "valuation": 0.054,
         },
       },
       "regionalMarketCheck": {

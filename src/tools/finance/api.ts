@@ -179,8 +179,23 @@ async function executeRequest(
 
   if (!response.ok) {
     const detail = `${response.status} ${response.statusText}`;
-    logger.error(`[Financial Datasets API] error: ${label} — ${detail}`);
-    throw new Error(`[Financial Datasets API] request failed: ${detail}`);
+    const responseBody = await response.text().catch(() => '');
+    let bodySummary = responseBody.trim();
+    if (bodySummary) {
+      try {
+        const parsed = JSON.parse(bodySummary) as Record<string, unknown>;
+        const message =
+          (typeof parsed.message === 'string' && parsed.message) ||
+          (typeof parsed.error === 'string' && parsed.error) ||
+          '';
+        if (message) bodySummary = message;
+      } catch {
+        // keep raw text summary
+      }
+    }
+    const fullDetail = bodySummary ? `${detail} (${bodySummary})` : detail;
+    logger.error(`[Financial Datasets API] error: ${label} — ${fullDetail}`);
+    throw new Error(`[Financial Datasets API] request failed: ${fullDetail}`);
   }
 
   const data = await response.json().catch(() => {

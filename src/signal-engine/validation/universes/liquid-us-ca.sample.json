@@ -1,0 +1,31 @@
+{
+  "name": "liquid-us-ca-sample",
+  "description": "Sample liquid US/Canada universe for walk-forward validation smoke tests.",
+  "survivorshipBiasWarning": "This static universe is survivorship-biased and for evaluation smoke testing only; it is not a survivorship-free research universe.",
+  "tickers": [
+    { "ticker": "AAPL", "region": "US", "sector": "Technology", "notes": "Mega-cap liquid" },
+    { "ticker": "MSFT", "region": "US", "sector": "Technology", "notes": "Mega-cap liquid" },
+    { "ticker": "NVDA", "region": "US", "sector": "Technology", "notes": "High-volume semiconductor" },
+    { "ticker": "AMZN", "region": "US", "sector": "Consumer Discretionary", "notes": "Mega-cap liquid" },
+    { "ticker": "GOOGL", "region": "US", "sector": "Communication Services", "notes": "Mega-cap liquid" },
+    { "ticker": "META", "region": "US", "sector": "Communication Services", "notes": "Mega-cap liquid" },
+    { "ticker": "TSLA", "region": "US", "sector": "Consumer Discretionary", "notes": "High-volume EV" },
+    { "ticker": "JPM", "region": "US", "sector": "Financials", "notes": "Large bank" },
+    { "ticker": "BAC", "region": "US", "sector": "Financials", "notes": "Large bank" },
+    { "ticker": "WMT", "region": "US", "sector": "Consumer Staples", "notes": "Defensive liquid" },
+    { "ticker": "COST", "region": "US", "sector": "Consumer Staples", "notes": "Large retailer" },
+    { "ticker": "XOM", "region": "US", "sector": "Energy", "notes": "Integrated energy" },
+    { "ticker": "CVX", "region": "US", "sector": "Energy", "notes": "Integrated energy" },
+    { "ticker": "JNJ", "region": "US", "sector": "Health Care", "notes": "Large pharma" },
+    { "ticker": "PFE", "region": "US", "sector": "Health Care", "notes": "Large pharma" },
+    { "ticker": "UNH", "region": "US", "sector": "Health Care", "notes": "Managed care" },
+    { "ticker": "SPY", "region": "US", "sector": "ETF", "notes": "Broad market ETF" },
+    { "ticker": "QQQ", "region": "US", "sector": "ETF", "notes": "Nasdaq 100 ETF" },
+    { "ticker": "XIU.TO", "region": "CA", "sector": "ETF", "notes": "TSX 60 ETF proxy" },
+    { "ticker": "RY.TO", "region": "CA", "sector": "Financials", "notes": "Canadian large bank" },
+    { "ticker": "TD.TO", "region": "CA", "sector": "Financials", "notes": "Canadian large bank" },
+    { "ticker": "ENB.TO", "region": "CA", "sector": "Energy", "notes": "Canadian pipeline" },
+    { "ticker": "CNQ.TO", "region": "CA", "sector": "Energy", "notes": "Canadian producer" },
+    { "ticker": "SHOP.TO", "region": "CA", "sector": "Technology", "notes": "Canadian tech large cap" }
+  ]
+}
