@@ -38,6 +38,7 @@
     "research:sma20-regime-risk": "bun run src/signal-engine/research/sma20-regime-risk-diagnostic.cli.ts",
     "research:sma20-risk-control": "bun run src/signal-engine/research/sma20-risk-control-test.cli.ts",
     "research:sma20-decision": "bun run src/signal-engine/research/sma20-walkforward-decision-report.cli.ts",
+    "research:signal-discovery": "bun run src/signal-engine/research/feature-engineering-signal-discovery.cli.ts",
     "ml:dataset": "bun run src/signal-engine/ml-dataset.cli.ts",
     "ml:sidecar": "bun run src/signal-engine/ml-sidecar.cli.ts",
     "ops:daily": "bun run src/signal-engine/daily-operator.cli.ts",
