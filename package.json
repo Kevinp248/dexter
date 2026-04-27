@@ -36,6 +36,7 @@
     "research:strategy-family-comparison": "bun run src/signal-engine/research/strategy-family-comparison.cli.ts",
     "research:sma20-holdout": "bun run src/signal-engine/research/sma20-holdout-validation.cli.ts",
     "research:sma20-regime-risk": "bun run src/signal-engine/research/sma20-regime-risk-diagnostic.cli.ts",
+    "research:sma20-risk-control": "bun run src/signal-engine/research/sma20-risk-control-test.cli.ts",
     "ml:dataset": "bun run src/signal-engine/ml-dataset.cli.ts",
     "ml:sidecar": "bun run src/signal-engine/ml-sidecar.cli.ts",
     "ops:daily": "bun run src/signal-engine/daily-operator.cli.ts",
