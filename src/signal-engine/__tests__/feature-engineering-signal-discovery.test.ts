@@ -6,6 +6,7 @@ import {
   buildSignalDiscoveryReport,
   finalSignalDiscoveryDecision,
   selectBestSignalDiscoveryTrainConfig,
+  validateSignalDiscoveryConfig,
   type FamilyWalkForwardResult,
   type SignalDiscoveryMetrics,
   type SignalDiscoveryStrategyConfig,
@@ -173,6 +174,44 @@ function wf(overrides: Partial<FamilyWalkForwardResult> = {}): FamilyWalkForward
 }
 
 describe('feature engineering signal discovery', () => {
+  test('invalid negative initialCapital is rejected', () => {
+    expect(() => validateSignalDiscoveryConfig({ initialCapital: -1 })).toThrow(/initialCapital/);
+  });
+
+  test('empty topNs is rejected', () => {
+    expect(() => validateSignalDiscoveryConfig({ topNs: [] })).toThrow(/topNs/);
+  });
+
+  test('invalid topN 0 is rejected', () => {
+    expect(() => validateSignalDiscoveryConfig({ topNs: [0] })).toThrow(/topNs/);
+  });
+
+  test('negative costBps is rejected', () => {
+    expect(() => validateSignalDiscoveryConfig({ costBpsValues: [-1] })).toThrow(/costBpsValues/);
+  });
+
+  test('holdDays 0 is rejected', () => {
+    expect(() => validateSignalDiscoveryConfig({ holdDays: 0 })).toThrow(/holdDays/);
+  });
+
+  test('negative minTradesForCandidate is rejected', () => {
+    expect(() => validateSignalDiscoveryConfig({ minTradesForCandidate: -1 })).toThrow(/minTradesForCandidate/);
+  });
+
+  test('valid custom config still works', () => {
+    expect(() => validateSignalDiscoveryConfig({
+      initialCapital: 50_000,
+      topNs: [4, 6],
+      costBpsValues: [0, 10],
+      holdDays: 20,
+      minTradesForCandidate: 1,
+    })).not.toThrow();
+  });
+
+  test('default config still works', () => {
+    expect(() => validateSignalDiscoveryConfig({})).not.toThrow();
+  });
+
   test('sector-relative features use only same-date sector data', () => {
     const artifact = buildFeatureEngineeredArtifact(makeArtifact([
       makeRow('AAPL', '2026-01-02', { sma_20_gap: -0.06, ret_20d: 0.02 }),

@@ -3,7 +3,16 @@ import path from 'node:path';
 import { PriceFeatureLabelArtifact, PriceFeatureLabelRow } from './price-feature-labels.js';
 import { computeProfitMetrics, type ProfitMetrics, type ProfitTrade, type ProfitVerdict } from './profit-backtest.js';
 import { sectorForTicker, type SectorBucket } from './sma20-regime-risk-diagnostic.js';
-import { countBy, mean, median, roundFinite } from './research-utils.js';
+import {
+  assertNonNegativeInteger,
+  assertNonNegativeNumber,
+  assertPositiveInteger,
+  assertPositiveNumber,
+  countBy,
+  mean,
+  median,
+  roundFinite,
+} from './research-utils.js';
 
 export type SignalDiscoveryFamilyId =
   | 'sector_relative_pullback'
@@ -69,6 +78,20 @@ export interface SignalDiscoveryConfig {
   costBpsValues?: number[];
   holdDays?: number;
   minTradesForCandidate?: number;
+}
+
+export function validateSignalDiscoveryConfig(config: SignalDiscoveryConfig): void {
+  assertPositiveNumber(config.initialCapital, 'initialCapital');
+  if (config.topNs !== undefined) {
+    if (!config.topNs.length) throw new Error('Invalid topNs: expected at least one value.');
+    for (const topN of config.topNs) assertPositiveInteger(topN, 'topNs');
+  }
+  if (config.costBpsValues !== undefined) {
+    if (!config.costBpsValues.length) throw new Error('Invalid costBpsValues: expected at least one value.');
+    for (const costBps of config.costBpsValues) assertNonNegativeNumber(costBps, 'costBpsValues');
+  }
+  assertPositiveInteger(config.holdDays, 'holdDays');
+  assertNonNegativeInteger(config.minTradesForCandidate, 'minTradesForCandidate');
 }
 
 export interface SignalDiscoveryStrategyConfig {
@@ -861,6 +884,7 @@ interface RequiredSignalDiscoveryConfig {
 }
 
 function normalizeConfig(config: SignalDiscoveryConfig): RequiredSignalDiscoveryConfig {
+  validateSignalDiscoveryConfig(config);
   return {
     inputPath: config.inputPath ? path.resolve(config.inputPath) : null,
     featuresOutputPath: config.featuresOutputPath ? path.resolve(config.featuresOutputPath) : null,

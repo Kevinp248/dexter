@@ -6,6 +6,7 @@ import {
   loadPriceFeatureArtifactForSignalDiscovery,
   persistFeatureEngineeredArtifact,
   persistSignalDiscoveryReport,
+  validateSignalDiscoveryConfig,
   type SignalDiscoveryConfig,
 } from './feature-engineering-signal-discovery.js';
 
@@ -84,6 +85,7 @@ export function parseSignalDiscoveryCliArgs(argv: string[]): SignalDiscoveryCliA
       continue;
     }
   }
+  validateSignalDiscoveryConfig(out);
   return out;
 }
 
